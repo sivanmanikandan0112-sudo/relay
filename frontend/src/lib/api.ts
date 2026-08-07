@@ -1,3 +1,5 @@
+import type { ReadinessStatus } from "./status";
+
 const BASE_URL = "/api";
 
 function authHeaders(): Record<string, string> {
@@ -18,6 +20,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ? JSON.stringify(body.error) : `Request failed: ${res.status}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -42,6 +45,9 @@ export const api = {
     request<ReadinessScoreRecord[]>(`/athletes/${athleteId}/readiness-history`),
   submitWellness: (entry: WellnessInput) =>
     request<WellnessEntry>("/wellness", { method: "POST", body: JSON.stringify(entry) }),
+  logRun: (entry: RunInput) => request<Run>("/training-load", { method: "POST", body: JSON.stringify(entry) }),
+  runsForAthlete: (athleteId: string) => request<Run[]>(`/training-load/athlete/${athleteId}`),
+  deleteRun: (id: string) => request<void>(`/training-load/${id}`, { method: "DELETE" }),
 };
 
 export interface Squad {
@@ -62,7 +68,7 @@ export interface ReadinessScoreRecord {
   week: number;
   year: number;
   score: number;
-  status: "READY" | "EASE_BACK" | "BACK_OFF";
+  status: ReadinessStatus;
   summary: string;
 }
 
@@ -90,14 +96,29 @@ export interface Note {
 
 export interface WellnessInput {
   athleteId: string;
-  sleepHours: number;
+  sleep: number;
+  soreness: number;
   mood: number;
   energy: number;
-  soreness: number;
-  stress: number;
+  motivation: number;
+  msg?: string;
 }
 
 export interface WellnessEntry extends WellnessInput {
   id: string;
   date: string;
+}
+
+export interface RunInput {
+  athleteId: string;
+  runType: string;
+  distanceMiles?: number;
+  durationMin: number;
+  rpe: number;
+}
+
+export interface Run extends RunInput {
+  id: string;
+  date: string;
+  load: number;
 }

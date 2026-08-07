@@ -17,10 +17,15 @@ enum SquadName {
   BOYS
 }
 
+// Fresh/Ease back/Back off are score-driven bands; Return protocol and
+// Injured are overrides that take precedence whenever an athlete has an
+// active or recovering injury on file, regardless of what the score says.
 enum ReadinessStatus {
-  READY
+  FRESH
   EASE_BACK
   BACK_OFF
+  RETURN_PROTOCOL
+  INJURED
 }
 
 enum InjuryStatus {
@@ -62,27 +67,30 @@ model Athlete {
 }
 
 model WellnessEntry {
-  id        String   @id @default(cuid())
-  athlete   Athlete  @relation(fields: [athleteId], references: [id])
-  athleteId String
-  date      DateTime @default(now())
-  sleepHours Float
-  mood      Int // 1-5
-  energy    Int // 1-5
-  soreness  Int // 1-5
-  stress    Int // 1-5
+  id         String   @id @default(cuid())
+  athlete    Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId  String
+  date       DateTime @default(now())
+  sleep      Int // 1-5, quality not hours
+  soreness   Int // 1-5
+  mood       Int // 1-5
+  energy     Int // 1-5
+  motivation Int // 1-5
+  msg        String? // optional free-text note from the athlete
 
   @@index([athleteId, date])
 }
 
 model TrainingLoad {
-  id          String   @id @default(cuid())
-  athlete     Athlete  @relation(fields: [athleteId], references: [id])
-  athleteId   String
-  date        DateTime @default(now())
-  rpe         Int // rate of perceived exertion, 1-10
-  durationMin Int
-  load        Int // rpe * durationMin, session load
+  id            String   @id @default(cuid())
+  athlete       Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId     String
+  date          DateTime @default(now())
+  runType       String // e.g. "Easy", "Tempo", "Long run", "Race"
+  distanceMiles Float?
+  durationMin   Int
+  rpe           Int // rate of perceived exertion, 1-10
+  load          Int // rpe * durationMin, session load
 
   @@index([athleteId, date])
 }

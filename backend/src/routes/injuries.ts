@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { recomputeReadiness } from "../lib/scoring.js";
 
 export const injuriesRouter = Router();
 
@@ -41,6 +42,7 @@ injuriesRouter.post("/", requireRole("COACH"), async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const injury = await prisma.injury.create({ data: parsed.data });
+  await recomputeReadiness(parsed.data.athleteId);
   res.status(201).json(injury);
 });
 
@@ -60,5 +62,6 @@ injuriesRouter.patch("/:id", requireRole("COACH"), async (req, res) => {
       endDate: parsed.data.status === "RESOLVED" ? new Date() : null,
     },
   });
+  await recomputeReadiness(injury.athleteId);
   res.json(injury);
 });

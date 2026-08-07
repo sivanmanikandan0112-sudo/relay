@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api, type ReadinessScore } from "../lib/api";
-import { STATUS_LABEL, STATUS_COLOR } from "../lib/status";
+import { STATUS_LABEL, STATUS_COLOR, scoreIsMeaningful } from "../lib/status";
 import { Sparkline } from "../components/Sparkline";
 
 function currentIsoWeek(date: Date): number {
@@ -42,7 +42,9 @@ export function Dashboard() {
               <td>
                 <Sparkline values={s.athlete.readinessScores.map((r) => r.score)} colorVar={STATUS_COLOR[s.status]} />
               </td>
-              <td style={{ color: STATUS_COLOR[s.status], fontFamily: "var(--font-mono)" }}>{s.score}</td>
+              <td style={{ color: STATUS_COLOR[s.status], fontFamily: "var(--font-mono)" }}>
+                {scoreIsMeaningful(s.status) ? s.score : "—"}
+              </td>
               <td>{STATUS_LABEL[s.status]}</td>
             </tr>
           ))}

@@ -28,10 +28,11 @@ relay/
 │       └── index.ts
 ├── frontend/           React SPA
 │   └── src/
-│       ├── pages/      Brief, Dashboard, Injuries, How It Works, Login
-│       ├── components/
+│       ├── pages/      Brief, Dashboard, Injuries, How It Works, Login,
+│       │               Athlete{Home,Checkin,Runs}
+│       ├── components/ Layout, SquadSelector, Sparkline, HowItWorksContent
 │       ├── context/
-│       └── lib/api.ts  REST client
+│       └── lib/        api.ts (REST client), status.ts (labels/colors)
 └── package.json         npm workspaces root
 ```
 
@@ -39,12 +40,31 @@ relay/
 
 - **Squad** — a roster grouping (e.g. Girls, Boys)
 - **Athlete** — belongs to a squad, optionally linked to a `User` for athlete login
-- **WellnessEntry** — daily self-reported sleep, mood, energy, soreness, stress
-- **TrainingLoad** — per-session RPE × duration
-- **ReadinessScore** — weekly computed score (0–100) + status (`READY` / `EASE_BACK` / `BACK_OFF`)
+- **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus an optional note
+- **TrainingLoad** — a logged run: type, distance, duration, RPE → session load (RPE × duration)
+- **ReadinessScore** — a weekly snapshot: score (0–100) + status. Recomputed automatically
+  whenever an athlete submits a check-in, logs a run, or their injury status changes — see
+  [`lib/scoring.ts`](backend/src/lib/scoring.ts).
 - **Injury** — tracked per athlete with status (`ACTIVE` / `RECOVERING` / `RESOLVED`)
 - **Note** — a coach's check-in note left on an athlete
 - **User** — coach or athlete account (JWT auth)
+
+### Readiness status
+
+Status is score-driven, except an injury always overrides it:
+
+| Status | Meaning | Trigger |
+|---|---|---|
+| `FRESH` | Steady, no action needed | score ≥ 65 |
+| `EASE_BACK` | Load creeping up, worth watching | 40 ≤ score < 65 |
+| `BACK_OFF` | Worth a real check-in this week | score < 40 |
+| `RETURN_PROTOCOL` | On return-to-run protocol | active `RECOVERING` injury |
+| `INJURED` | Out, held out of load tracking | active `ACTIVE` injury |
+
+The score itself combines an acute:chronic training-load ratio (the last 7 days of logged runs vs.
+the last 28) with how far recent wellness check-ins sit below a normal baseline — see
+[`lib/readiness.ts`](backend/src/lib/readiness.ts) for the exact formula and the plain-language
+message generator behind each Brief card.
 
 ## Getting started
 
@@ -108,7 +128,8 @@ All routes are under `/api` and (aside from `/api/auth/*` and `/api/health`) req
 | GET | `/api/injuries?squadId=&status=` | List injuries |
 | POST | `/api/injuries` | Log an injury (coach only) |
 | PATCH | `/api/injuries/:id` | Update injury status (coach only) |
-| POST | `/api/wellness` | Submit a wellness check-in |
+| POST | `/api/wellness` | Submit a wellness check-in (also recomputes readiness) |
 | GET | `/api/wellness/athlete/:athleteId` | Wellness history |
-| POST | `/api/training-load` | Log a training session |
-| GET | `/api/training-load/athlete/:athleteId` | Training load history |
+| POST | `/api/training-load` | Log a run (also recomputes readiness) |
+| GET | `/api/training-load/athlete/:athleteId` | Run history |
+| DELETE | `/api/training-load/:id` | Delete a logged run |

@@ -35,14 +35,17 @@ export function Brief() {
     });
   }, [squadId, week, year]);
 
-  const flagged = scores.filter((s) => s.status !== "READY");
+  // Only athletes actually worth a check-in — injured/return-protocol
+  // athletes are expected to look "off" and steady ones need no action.
+  const flagged = scores.filter((s) => s.status === "BACK_OFF" || s.status === "EASE_BACK");
+  const briefList = flagged.slice(0, 4);
 
   return (
     <section>
       <p className="eyebrow">
         Monday Brief · Week {week} · {squadName}
       </p>
-      <h1>Talk to these {flagged.length} this week.</h1>
+      <h1>Talk to these {briefList.length} this week.</h1>
       <p className="subtitle">
         Relay read every athlete's trend, wellness and load, and turned it into a decision — not a
         dashboard. Start at the top. The rest of the squad is steady.
@@ -51,7 +54,7 @@ export function Brief() {
       {error && <p className="error">{error}</p>}
 
       <div className="brief-list">
-        {flagged.map((s, i) => (
+        {briefList.map((s, i) => (
           <article key={s.id} className={`brief-card ${statusClass(s.status)}`}>
             <div className="brief-rank" style={{ background: STATUS_COLOR[s.status] }}>
               {i + 1}

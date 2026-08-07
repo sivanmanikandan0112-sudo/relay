@@ -1,11 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { statusForScore } from "../src/lib/readiness.js";
+import { bandForScore, plainSignal, STATUS_COLOR } from "../src/lib/readiness.js";
+import { recomputeReadiness } from "../src/lib/scoring.js";
 
 const prisma = new PrismaClient();
 
-// Same ISO-8601 week calculation the frontend uses, so seeded data always
-// lines up with "this week" no matter when the seed script runs.
 function currentIsoWeek(date: Date): { week: number; year: number } {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -15,64 +14,116 @@ function currentIsoWeek(date: Date): { week: number; year: number } {
   return { week, year: d.getUTCFullYear() };
 }
 
-const { week: CURRENT_WEEK, year: YEAR } = currentIsoWeek(new Date());
-const HISTORY_WEEKS = 6; // weeks CURRENT_WEEK-5 .. CURRENT_WEEK
+const NOW = new Date();
+const { week: CURRENT_WEEK, year: YEAR } = currentIsoWeek(NOW);
+const HISTORY_WEEKS = 5; // weeks before the live-computed current week
 
-const firstName = (name: string) => name.split(" ")[0];
-
-const BACK_OFF_SUMMARY = (name: string) =>
-  `${firstName(name)}'s easy runs are costing more effort than a few weeks ago, and their mood and energy have dipped with it — worth a real check-in this week.`;
-
-const EASE_BACK_SUMMARY = (name: string) =>
-  `${firstName(name)}'s load is creeping up and their sleep has been a little light lately; keep an eye on them and maybe soften the next hard day.`;
-
-const READY_SUMMARY = () => "Trending steady this week — no action needed.";
+type Archetype = "fresh" | "watch" | "risk" | "injured" | "return";
 
 interface AthleteSeed {
   name: string;
-  finalScore: number;
+  archetype: Archetype;
 }
 
-// Final-week scores match the reference design; everyone else is a steady
-// "no news" athlete filled in so each squad has a realistic roster.
 const GIRLS: AthleteSeed[] = [
-  { name: "Maya Okonkwo", finalScore: 24 },
-  { name: "Sofia Reyes", finalScore: 37 },
-  { name: "Ava Thompson", finalScore: 45 },
-  { name: "Lily Anderson", finalScore: 54 },
-  { name: "Priya Chandra", finalScore: 78 },
-  { name: "Noor Hassan", finalScore: 82 },
-  { name: "Emma Whitfield", finalScore: 74 },
-  { name: "Zoe Martinez", finalScore: 88 },
+  { name: "Maya Okonkwo", archetype: "risk" },
+  { name: "Sofia Reyes", archetype: "risk" },
+  { name: "Ava Thompson", archetype: "watch" },
+  { name: "Lily Anderson", archetype: "watch" },
+  { name: "Chloe Bennett", archetype: "injured" },
+  { name: "Emma Whitfield", archetype: "return" },
+  { name: "Priya Chandra", archetype: "fresh" },
+  { name: "Noor Hassan", archetype: "fresh" },
+  { name: "Zoe Martinez", archetype: "fresh" },
 ];
 
 const BOYS: AthleteSeed[] = [
-  { name: "Ethan Brooks", finalScore: 52 },
-  { name: "Marcus Webb", finalScore: 71 },
-  { name: "Diego Alvarez", finalScore: 85 },
-  { name: "Owen Fitzgerald", finalScore: 79 },
-  { name: "Kai Nakamura", finalScore: 91 },
-  { name: "Jonah Pruitt", finalScore: 68 },
+  { name: "Jonah Pruitt", archetype: "risk" },
+  { name: "Ethan Brooks", archetype: "watch" },
+  { name: "Marcus Webb", archetype: "fresh" },
+  { name: "Diego Alvarez", archetype: "fresh" },
+  { name: "Owen Fitzgerald", archetype: "fresh" },
+  { name: "Kai Nakamura", archetype: "fresh" },
 ];
 
-function summaryFor(name: string, score: number): string {
-  const status = statusForScore(score);
-  if (status === "BACK_OFF") return BACK_OFF_SUMMARY(name);
-  if (status === "EASE_BACK") return EASE_BACK_SUMMARY(name);
-  return READY_SUMMARY();
+// Historical score bands per archetype, for the weeks before "now" — purely
+// for the sparkline; the current week is always live-computed from real
+// seeded wellness/load rows below.
+const HISTORY_RANGE: Record<Archetype, [number, number]> = {
+  fresh: [70, 92],
+  watch: [45, 62],
+  risk: [18, 38],
+  injured: [30, 55], // trending down before the injury happened
+  return: [20, 40], // was low before injury, now recovering
+};
+
+function randIn([lo, hi]: [number, number]): number {
+  return Math.round(lo + Math.random() * (hi - lo));
 }
 
-// Walk backwards from the final score with small random steps so each
-// athlete has a plausible multi-week trend for the sparkline.
-function trendScores(finalScore: number): number[] {
-  const scores = [finalScore];
-  let current = finalScore;
-  for (let i = 1; i < HISTORY_WEEKS; i++) {
-    const drift = Math.round((Math.random() - 0.5) * 16);
-    current = Math.max(5, Math.min(98, current + drift));
-    scores.push(current);
+function daysAgo(n: number): Date {
+  return new Date(NOW.getTime() - n * 86400000);
+}
+
+async function seedHistory(athleteId: string, name: string, archetype: Archetype) {
+  for (let i = HISTORY_WEEKS; i >= 1; i--) {
+    const week = CURRENT_WEEK - i;
+    const score = randIn(HISTORY_RANGE[archetype]);
+    const band = bandForScore(score);
+    await prisma.readinessScore.create({
+      data: {
+        athleteId,
+        week,
+        year: YEAR,
+        score,
+        status: band,
+        summary: plainSignal(name, band, score < 40 ? 2.5 : score < 65 ? 3.2 : 4.2),
+      },
+    });
   }
-  return scores.reverse();
+}
+
+async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
+  // Wellness check-ins for the last 5 days.
+  const wellnessBase: Record<Archetype, number> = { fresh: 4.3, watch: 3.2, risk: 2.2, injured: 3.0, return: 3.6 };
+  const base = wellnessBase[archetype];
+  for (let i = 0; i < 5; i++) {
+    const jitter = () => Math.max(1, Math.min(5, Math.round(base + (Math.random() - 0.5))));
+    await prisma.wellnessEntry.create({
+      data: {
+        athleteId,
+        date: daysAgo(i),
+        sleep: jitter(),
+        soreness: Math.max(1, Math.min(5, 6 - jitter())), // higher base -> lower soreness
+        mood: jitter(),
+        energy: jitter(),
+        motivation: jitter(),
+      },
+    });
+  }
+
+  // Training load: a 28-day chronic baseline, with the acute (last 7 days)
+  // spiking for "risk"/"watch" archetypes to produce a realistic ACWR.
+  const chronicDaily: Record<Archetype, number> = { fresh: 35, watch: 38, risk: 40, injured: 15, return: 20 };
+  const acuteDaily: Record<Archetype, number> = { fresh: 34, watch: 52, risk: 74, injured: 5, return: 18 };
+
+  for (let daysBack = 27; daysBack >= 0; daysBack--) {
+    const inAcuteWindow = daysBack < 7;
+    const targetLoad = inAcuteWindow ? acuteDaily[archetype] : chronicDaily[archetype];
+    const durationMin = 30 + Math.round(Math.random() * 20);
+    const rpe = Math.max(1, Math.min(10, Math.round(targetLoad / durationMin) || 4));
+    await prisma.trainingLoad.create({
+      data: {
+        athleteId,
+        date: daysAgo(daysBack),
+        runType: rpe >= 8 ? "Tempo" : rpe >= 6 ? "Long run" : "Easy",
+        distanceMiles: Math.round((durationMin / 8) * 10) / 10,
+        durationMin,
+        rpe,
+        load: rpe * durationMin,
+      },
+    });
+  }
 }
 
 async function main() {
@@ -83,16 +134,8 @@ async function main() {
   await prisma.injury.deleteMany();
   await prisma.athlete.deleteMany();
 
-  const girls = await prisma.squad.upsert({
-    where: { name: "GIRLS" },
-    update: {},
-    create: { name: "GIRLS" },
-  });
-  const boys = await prisma.squad.upsert({
-    where: { name: "BOYS" },
-    update: {},
-    create: { name: "BOYS" },
-  });
+  const girls = await prisma.squad.upsert({ where: { name: "GIRLS" }, update: {}, create: { name: "GIRLS" } });
+  const boys = await prisma.squad.upsert({ where: { name: "BOYS" }, update: {}, create: { name: "BOYS" } });
 
   const passwordHash = await bcrypt.hash("password123", 10);
   await prisma.user.upsert({
@@ -106,29 +149,34 @@ async function main() {
     [boys, BOYS],
   ] as const) {
     for (const a of roster) {
-      const athlete = await prisma.athlete.create({
-        data: { name: a.name, squadId: squad.id },
-      });
+      const athlete = await prisma.athlete.create({ data: { name: a.name, squadId: squad.id } });
 
-      const weeklyScores = trendScores(a.finalScore);
-      for (let i = 0; i < HISTORY_WEEKS; i++) {
-        const week = CURRENT_WEEK - (HISTORY_WEEKS - 1 - i);
-        const score = weeklyScores[i];
-        await prisma.readinessScore.create({
+      await seedHistory(athlete.id, a.name, a.archetype);
+      await seedWellnessAndLoad(athlete.id, a.archetype);
+
+      if (a.archetype === "injured") {
+        await prisma.injury.create({
+          data: { athleteId: athlete.id, description: "Right shin — suspected tibial stress", status: "ACTIVE" },
+        });
+      }
+      if (a.archetype === "return") {
+        await prisma.injury.create({
           data: {
             athleteId: athlete.id,
-            week,
-            year: YEAR,
-            score,
-            status: statusForScore(score),
-            summary: summaryFor(a.name, score),
+            description: "Left hamstring strain",
+            status: "RECOVERING",
+            startDate: daysAgo(18),
           },
         });
       }
+
+      // Compute the current week live from the seeded wellness/load/injury
+      // data above, exactly the way a real submission would.
+      await recomputeReadiness(athlete.id, NOW);
     }
   }
 
-  console.log("Seed complete.");
+  console.log(`Seed complete for week ${CURRENT_WEEK}, ${YEAR}. Status colors:`, STATUS_COLOR);
 }
 
 main()
