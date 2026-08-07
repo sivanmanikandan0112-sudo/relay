@@ -5,6 +5,7 @@ import { STATUS_LABEL, STATUS_COLOR } from "../lib/status";
 import { Sparkline } from "../components/Sparkline";
 import { DetailDrawer } from "../components/DetailDrawer";
 import { NoteModal } from "../components/NoteModal";
+import { MatchingSection } from "../components/MatchingSection";
 
 const SQUAD_LABEL: Record<Squad["name"], string> = { GIRLS: "Girls", BOYS: "Boys" };
 
@@ -150,6 +151,8 @@ export function Brief() {
         Readiness blends each athlete's load trend with their self-reported wellness — higher is fresher. Need
         the whole squad at a glance? See the <span style={{ color: "#8a97ad" }}>Dashboard</span>.
       </div>
+
+      {scores.length > 0 && <MatchingSection scores={scores} />}
 
       {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} />}
       {noteFor && (
