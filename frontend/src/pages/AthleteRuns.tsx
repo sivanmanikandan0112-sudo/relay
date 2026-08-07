@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
-import { api, type Run } from "../lib/api";
+import { api, type Note, type Run } from "../lib/api";
+import { formatShortDate } from "../lib/format";
 
 interface AthleteRunsProps {
   athleteId: string;
 }
 
-const RUN_TYPES = ["Easy", "Tempo", "Long run", "Race", "Recovery"];
-
 export function AthleteRuns({ athleteId }: AthleteRunsProps) {
   const [runs, setRuns] = useState<Run[]>([]);
-  const [runType, setRunType] = useState(RUN_TYPES[0]);
-  const [distanceMiles, setDistanceMiles] = useState<number | "">("");
-  const [durationMin, setDurationMin] = useState(30);
-  const [rpe, setRpe] = useState(5);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [logType, setLogType] = useState("");
+  const [logDist, setLogDist] = useState("");
+  const [logTime, setLogTime] = useState("");
+  const [logRpe, setLogRpe] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   function refresh() {
     api.runsForAthlete(athleteId).then(setRuns);
+    api.notesForAthlete(athleteId).then(setNotes);
   }
 
   useEffect(() => {
@@ -24,19 +25,27 @@ export function AthleteRuns({ athleteId }: AthleteRunsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  async function handleLog() {
+  const canAdd = logType.trim().length > 0 && logRpe != null;
+
+  async function handleAdd() {
+    if (!canAdd || logRpe == null) return;
     setSaving(true);
     try {
+      // "Time" is a free-text field in the log form (e.g. "34:20"); we
+      // convert it to minutes for the load calc, defaulting sensibly if
+      // it doesn't parse.
+      const parsedMin = parseTimeToMinutes(logTime) ?? 30;
       await api.logRun({
         athleteId,
-        runType,
-        distanceMiles: distanceMiles === "" ? undefined : Number(distanceMiles),
-        durationMin,
-        rpe,
+        runType: logType.trim(),
+        distanceMiles: logDist.trim() ? Number(logDist.trim()) || undefined : undefined,
+        durationMin: parsedMin,
+        rpe: logRpe,
       });
-      setDistanceMiles("");
-      setDurationMin(30);
-      setRpe(5);
+      setLogType("");
+      setLogDist("");
+      setLogTime("");
+      setLogRpe(null);
       refresh();
     } finally {
       setSaving(false);
@@ -49,68 +58,101 @@ export function AthleteRuns({ athleteId }: AthleteRunsProps) {
   }
 
   return (
-    <>
-      <div className="panel">
-        <h2>Log a run</h2>
-        <label className="field">
-          Type
-          <select className="athlete-picker" value={runType} onChange={(e) => setRunType(e.target.value)}>
-            {RUN_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Distance (miles, optional)
-          <input
-            type="number"
-            min={0}
-            step={0.1}
-            value={distanceMiles}
-            onChange={(e) => setDistanceMiles(e.target.value === "" ? "" : Number(e.target.value))}
-            className="athlete-picker"
-          />
-        </label>
-        <label className="field">
-          Duration: <strong>{durationMin} min</strong>
-          <input type="range" min={5} max={150} step={5} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))} />
-        </label>
-        <label className="field">
-          Effort (RPE): <strong>{rpe}/10</strong>
-          <input type="range" min={1} max={10} step={1} value={rpe} onChange={(e) => setRpe(Number(e.target.value))} />
-        </label>
-        <button className="btn-primary" disabled={saving} onClick={handleLog}>
-          {saving ? "Saving…" : "Log run"}
-        </button>
+    <div className="ath-wrap-runs">
+      <div className="runs-header">
+        <div>
+          <h1 className="page-title" style={{ margin: "0 0 4px" }}>
+            My runs
+          </h1>
+          <p className="page-subtitle" style={{ margin: "0 0 16px" }}>
+            Every run, with anything your coach left you.
+          </p>
+        </div>
       </div>
 
-      <div className="panel">
-        <h2>Recent runs</h2>
-        {runs.length === 0 && <p className="subtitle">No runs logged yet.</p>}
-        <ul className="run-list">
-          {runs.map((r) => (
-            <li key={r.id}>
-              <div className="run-row">
-                <span className="run-type">
-                  {r.runType}
-                  {r.distanceMiles ? ` · ${r.distanceMiles}mi` : ""}
-                </span>
-                <span className="run-meta">{new Date(r.date).toLocaleDateString()}</span>
-              </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">
-                  {r.durationMin} min · RPE {r.rpe} · load {r.load}
-                </span>
-                <button className="btn-secondary" onClick={() => handleDelete(r.id)}>
-                  Delete
+      <div className="log-run-panel">
+        <div className="field-hint">LOG A RUN MANUALLY</div>
+        <div className="log-run-grid">
+          <input
+            className="ath-input"
+            value={logType}
+            onChange={(e) => setLogType(e.target.value)}
+            placeholder="Workout (e.g. Easy 5mi)"
+          />
+          <input className="ath-input" value={logDist} onChange={(e) => setLogDist(e.target.value)} placeholder="Distance" />
+          <input className="ath-input" value={logTime} onChange={(e) => setLogTime(e.target.value)} placeholder="Time" />
+        </div>
+        <div className="rpe-row">
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div className="field-hint" style={{ marginBottom: 6 }}>
+              How hard did it feel? · <span style={{ color: logRpe ? "#d9703f" : "#7c88a0" }}>{logRpe ? `${logRpe}/10` : "not set yet"}</span>
+            </div>
+            <div className="rpe-picker">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
+                <button key={v} className={`rpe-btn ${logRpe === v ? "selected" : ""}`} onClick={() => setLogRpe(v)}>
+                  {v}
                 </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              ))}
+            </div>
+          </div>
+          <button className={`add-run-btn ${canAdd ? "enabled" : "disabled"}`} disabled={!canAdd || saving} onClick={handleAdd}>
+            Add run
+          </button>
+        </div>
+        {!canAdd && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#7c88a0", marginTop: 8 }}>Add a workout name and pick how hard it felt to log the run.</div>}
       </div>
-    </>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {runs.map((r) => (
+          <div className="run-item" key={r.id}>
+            <div className="run-item-row">
+              <div className="run-item-date">{formatShortDate(r.date)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="run-item-type">{r.runType}</div>
+                <div className="run-item-meta">
+                  {r.distanceMiles ? `${r.distanceMiles}mi · ` : ""}
+                  {r.durationMin}min · effort {r.rpe}/10
+                </div>
+              </div>
+              <button className="run-item-delete" title="Remove run" onClick={() => handleDelete(r.id)}>
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+        {runs.length === 0 && <p className="page-subtitle">No runs logged yet.</p>}
+      </div>
+
+      {notes.length > 0 && (
+        <>
+          <div className="field-hint" style={{ margin: "20px 0 8px" }}>
+            NOTES FROM YOUR COACH
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {notes.map((n) => (
+              <div className="run-note" key={n.id} style={{ borderRadius: 9, border: "1px solid #5a3f16" }}>
+                <span className="icon">✍</span>
+                <div>
+                  <div className="date">
+                    {n.coach.name} · {formatShortDate(n.createdAt)}
+                  </div>
+                  <div className="text">{n.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
+}
+
+function parseTimeToMinutes(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":").map(Number);
+  if (parts.some(Number.isNaN)) return null;
+  if (parts.length === 2) return parts[0] + parts[1] / 60;
+  if (parts.length === 1) return parts[0];
+  return null;
 }

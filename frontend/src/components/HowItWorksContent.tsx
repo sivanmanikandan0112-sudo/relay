@@ -38,7 +38,7 @@ const STEPS = [
     body: (
       <>
         Tap a name to see the "why" behind the flag, then leave a note that lands on that
-        athlete's runs. If someone's hurt, log it in <strong>Injuries</strong> — return-to-run
+        athlete's profile. If someone's hurt, log it in <strong>Injuries</strong> — return-to-run
         protocol pauses their flags so expected-slow rehab paces don't look like a problem.
       </>
     ),
@@ -47,10 +47,10 @@ const STEPS = [
 
 export function HowItWorksContent() {
   return (
-    <>
-      <p className="eyebrow">UNDER THE HOOD</p>
-      <h1>How Relay works</h1>
-      <p className="subtitle">
+    <div style={{ maxWidth: 820 }}>
+      <div className="eyebrow-mono">UNDER THE HOOD</div>
+      <h1 className="page-title">How Relay works</h1>
+      <p className="page-subtitle">
         Your week in four steps. Relay does the watching so you can spend your time on the runners
         who need it.
       </p>
@@ -65,14 +65,14 @@ export function HowItWorksContent() {
           </div>
         ))}
       </div>
-      <div className="callout">
+      <div className="callout" style={{ background: "#0c1017", border: "1px solid #1e2839" }}>
         <h3>What Relay is — and isn't</h3>
         <p>
           It isn't another training log or planner. It's the layer on top that answers one question
-          no other tool does: <strong>who needs my attention this week?</strong> It can sit
-          alongside whatever you already use.
+          no other tool does: <strong style={{ color: "#c3cddd" }}>who needs my attention this week?</strong>{" "}
+          It can sit alongside whatever you already use.
         </p>
       </div>
-    </>
+    </div>
   );
 }

@@ -1,47 +1,46 @@
 import { useEffect, useState } from "react";
-import { api, type Note, type ReadinessScoreRecord } from "../lib/api";
-import { STATUS_LABEL, STATUS_COLOR, statusClass, scoreIsMeaningful } from "../lib/status";
-import { Sparkline } from "../components/Sparkline";
+import { api, type WellnessEntry } from "../lib/api";
+import { formatShortDate } from "../lib/format";
 
 interface AthleteCheckinProps {
   athleteId: string;
   athleteName: string;
 }
 
-const RATING_LABELS = ["", "Very low", "Low", "Okay", "Good", "Great"];
+const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "soreness"; label: string; hint: string }> = [
+  { key: "sleep", label: "Sleep", hint: "1 rough · 5 great" },
+  { key: "energy", label: "Energy", hint: "1 drained · 5 bouncy" },
+  { key: "mood", label: "Mood", hint: "1 flat/irritable · 5 great" },
+  { key: "motivation", label: "Motivation", hint: "1 dreading it · 5 fired up" },
+  { key: "soreness", label: "Soreness", hint: "1 none · 5 very sore" },
+];
 
 export function AthleteCheckin({ athleteId, athleteName }: AthleteCheckinProps) {
-  const [history, setHistory] = useState<ReadinessScoreRecord[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-
-  const [sleep, setSleep] = useState(3);
-  const [soreness, setSoreness] = useState(3);
-  const [mood, setMood] = useState(3);
-  const [energy, setEnergy] = useState(3);
-  const [motivation, setMotivation] = useState(3);
+  const [history, setHistory] = useState<WellnessEntry[]>([]);
+  const [draft, setDraft] = useState({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
   const [msg, setMsg] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function refresh() {
-    api.readinessHistory(athleteId).then(setHistory);
-    api.notesForAthlete(athleteId).then(setNotes);
+    api.wellnessForAthlete(athleteId).then(setHistory);
   }
 
   useEffect(() => {
     setSubmitted(false);
+    setMsg("");
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [athleteId]);
 
-  const latest = history[history.length - 1];
+  const firstName = athleteName.split(" ")[0] || athleteName;
+  const messages = history.filter((h) => h.msg);
 
-  async function handleCheckIn() {
+  async function handleSubmit() {
     setSaving(true);
     try {
-      await api.submitWellness({ athleteId, sleep, soreness, mood, energy, motivation, msg: msg || undefined });
+      await api.submitWellness({ athleteId, ...draft, msg: msg.trim() || undefined });
       setSubmitted(true);
-      setMsg("");
       refresh();
     } finally {
       setSaving(false);
@@ -49,76 +48,87 @@ export function AthleteCheckin({ athleteId, athleteName }: AthleteCheckinProps) 
   }
 
   return (
-    <>
-      {latest && (
-        <article className={`brief-card athlete-score-card ${statusClass(latest.status)}`}>
-          <div className="brief-body">
-            <div className="brief-header">
-              <h3>Readiness</h3>
-              <span
-                className="badge"
-                style={{ borderColor: STATUS_COLOR[latest.status], color: STATUS_COLOR[latest.status] }}
-              >
-                {STATUS_LABEL[latest.status]}
-              </span>
+    <div className="ath-wrap">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2, flexWrap: "wrap" }}>
+        <div className="eyebrow-mono" style={{ color: "#8a97ad" }}>
+          HEY {firstName.toUpperCase()} · 10 SECONDS
+        </div>
+        <span className="streak-badge">
+          ✓ {history.length} check-ins · {history.length}-day streak
+        </span>
+      </div>
+      <h1 className="page-title" style={{ margin: "0 0 6px" }}>
+        How are you feeling today?
+      </h1>
+      <p className="page-subtitle" style={{ fontSize: 13, maxWidth: "56ch" }}>
+        This is the earliest sign of overtraining — how you feel shifts before your times do. It stays
+        between you and your coach.
+      </p>
+
+      <div className="checkin-panel">
+        {FIELDS.map((field) => (
+          <div className="checkin-field" key={field.key}>
+            <div className="checkin-field-label">
+              <div className="name">{field.label}</div>
+              <div className="hint">{field.hint}</div>
             </div>
-            <p>{latest.summary}</p>
-          </div>
-          <div className="brief-score">
-            <Sparkline values={history.map((h) => h.score)} colorVar={STATUS_COLOR[latest.status]} width={100} />
-            <div className="score-value" style={{ color: STATUS_COLOR[latest.status] }}>
-              {scoreIsMeaningful(latest.status) ? latest.score : "—"}
+            <div className="checkin-opts">
+              {[1, 2, 3, 4, 5].map((v) => (
+                <button
+                  key={v}
+                  className={`pill-btn ${draft[field.key] === v ? "selected" : ""}`}
+                  onClick={() => setDraft((d) => ({ ...d, [field.key]: v }))}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
-            <div className="score-label">ready</div>
           </div>
-        </article>
+        ))}
+        <div className="checkin-divider" />
+        <div className="field-hint">ANYTHING TO TELL YOUR COACH? · OPTIONAL</div>
+        <textarea
+          className="ath-textarea"
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          placeholder="e.g. Right shin a little tender on the downhills."
+        />
+        <button className="checkin-submit" disabled={saving} onClick={handleSubmit}>
+          {saving ? "Saving…" : submitted ? "Update today's check-in" : "Submit today's check-in"}
+        </button>
+        {submitted && (
+          <div className="checkin-confirm">
+            <span>✓</span>
+            <span>Today's check-in is in — change anything above and update it anytime.</span>
+          </div>
+        )}
+      </div>
+
+      {submitted && (
+        <div className="confirm-banner">
+          <span className="icon">✓</span>
+          <div className="text">
+            Logged. We deliberately don't show you your running average here — so today's rating is honest,
+            not nudged toward yesterday's. Your coach sees the pattern.
+          </div>
+        </div>
       )}
 
-      <div className="panel">
-        <h2>How are you feeling today?</h2>
-        {[
-          { label: "Sleep", value: sleep, set: setSleep },
-          { label: "Soreness", value: soreness, set: setSoreness },
-          { label: "Mood", value: mood, set: setMood },
-          { label: "Energy", value: energy, set: setEnergy },
-          { label: "Motivation", value: motivation, set: setMotivation },
-        ].map((field) => (
-          <label className="field" key={field.label}>
-            {field.label}: <strong>{RATING_LABELS[field.value]}</strong>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={field.value}
-              onChange={(e) => field.set(Number(e.target.value))}
-            />
-          </label>
-        ))}
-        <label className="field">
-          Anything your coach should know? (optional)
-          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="e.g. Shins a little sore after the tempo." />
-        </label>
-        <button className="btn-primary" disabled={saving} onClick={handleCheckIn}>
-          {saving ? "Saving…" : "Submit check-in"}
-        </button>
-        {submitted && <p className="success">Check-in logged. Nice work{athleteName ? `, ${athleteName.split(" ")[0]}` : ""}.</p>}
-      </div>
-
-      <div className="panel">
-        <h2>Notes from your coach</h2>
-        {notes.length === 0 && <p className="subtitle">No notes yet.</p>}
-        <ul className="note-list">
-          {notes.map((n) => (
-            <li key={n.id}>
-              <p>{n.body}</p>
-              <span className="note-meta">
-                {n.coach.name} · {new Date(n.createdAt).toLocaleDateString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </>
+      {messages.length > 0 && (
+        <>
+          <div className="field-hint" style={{ margin: "20px 0 8px" }}>
+            WHAT YOU'VE SHARED
+          </div>
+          <div className="shared-msgs">
+            {messages.map((m) => (
+              <div className="shared-msg" key={m.id}>
+                <div className="date">{formatShortDate(m.date)}</div>
+                <div className="text">{m.msg}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

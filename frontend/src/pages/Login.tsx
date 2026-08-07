@@ -24,7 +24,7 @@ export function Login() {
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
         <h1>RELAY</h1>
-        <p className="subtitle">Sign in to your coach account.</p>
+        <p style={{ color: "var(--text-dim)", margin: 0, fontSize: 13.5 }}>Sign in to your coach account.</p>
         <label>
           Email
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />

@@ -32,6 +32,8 @@ export const api = {
     }),
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
+  athleteDetail: (athleteId: string) => request<AthleteDetail>(`/athletes/${athleteId}`),
+  wellnessForAthlete: (athleteId: string) => request<WellnessEntry[]>(`/wellness/athlete/${athleteId}`),
   brief: (week: number, year: number, squadId?: string) =>
     request<ReadinessScore[]>(
       `/brief?week=${week}&year=${year}${squadId ? `&squadId=${squadId}` : ""}`
@@ -60,6 +62,11 @@ export interface Athlete {
   id: string;
   name: string;
   squadId: string;
+}
+
+export interface AthleteDetail extends Athlete {
+  squad: Squad;
+  injuries: Injury[];
 }
 
 export interface ReadinessScoreRecord {
