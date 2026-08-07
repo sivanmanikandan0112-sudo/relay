@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  COACH
+  ATHLETE
+}
+
+enum SquadName {
+  GIRLS
+  BOYS
+}
+
+enum ReadinessStatus {
+  READY
+  EASE_BACK
+  BACK_OFF
+}
+
+enum InjuryStatus {
+  ACTIVE
+  RECOVERING
+  RESOLVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(COACH)
+  athlete      Athlete?
+  notes        Note[]
+  createdAt    DateTime @default(now())
+}
+
+model Squad {
+  id       String    @id @default(cuid())
+  name     SquadName @unique
+  athletes Athlete[]
+}
+
+model Athlete {
+  id             String           @id @default(cuid())
+  name           String
+  squad          Squad            @relation(fields: [squadId], references: [id])
+  squadId        String
+  user           User?            @relation(fields: [userId], references: [id])
+  userId         String?          @unique
+  wellnessEntries WellnessEntry[]
+  trainingLoads  TrainingLoad[]
+  readinessScores ReadinessScore[]
+  injuries       Injury[]
+  notes          Note[]
+  createdAt      DateTime         @default(now())
+}
+
+model WellnessEntry {
+  id        String   @id @default(cuid())
+  athlete   Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId String
+  date      DateTime @default(now())
+  sleepHours Float
+  mood      Int // 1-5
+  energy    Int // 1-5
+  soreness  Int // 1-5
+  stress    Int // 1-5
+
+  @@index([athleteId, date])
+}
+
+model TrainingLoad {
+  id          String   @id @default(cuid())
+  athlete     Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId   String
+  date        DateTime @default(now())
+  rpe         Int // rate of perceived exertion, 1-10
+  durationMin Int
+  load        Int // rpe * durationMin, session load
+
+  @@index([athleteId, date])
+}
+
+model ReadinessScore {
+  id          String          @id @default(cuid())
+  athlete     Athlete         @relation(fields: [athleteId], references: [id])
+  athleteId   String
+  week        Int
+  year        Int
+  score       Int // 0-100
+  status      ReadinessStatus
+  summary     String
+  createdAt   DateTime        @default(now())
+
+  @@unique([athleteId, week, year])
+  @@index([week, year])
+}
+
+model Injury {
+  id          String       @id @default(cuid())
+  athlete     Athlete      @relation(fields: [athleteId], references: [id])
+  athleteId   String
+  description String
+  status      InjuryStatus @default(ACTIVE)
+  startDate   DateTime     @default(now())
+  endDate     DateTime?
+
+  @@index([athleteId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  athlete   Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId String
+  coach     User     @relation(fields: [coachId], references: [id])
+  coachId   String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([athleteId])
+}
