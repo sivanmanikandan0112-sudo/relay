@@ -24,7 +24,7 @@ export function Dashboard() {
 
   return (
     <section>
-      <p className="eyebrow">Squad overview</p>
+      <p className="eyebrow">SQUAD OVERVIEW</p>
       <h1>Dashboard</h1>
       <table className="table">
         <thead>

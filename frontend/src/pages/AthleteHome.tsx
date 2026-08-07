@@ -36,7 +36,7 @@ export function AthleteHome({ squads, squadId, onSquadChange }: AthleteHomeProps
 
   return (
     <section>
-      <p className="eyebrow">Previewing as</p>
+      <p className="eyebrow">PREVIEWING AS</p>
       <div className="athlete-picker-row">
         <SquadSelector squads={squads} activeSquadId={squadId} onChange={onSquadChange} />
         <select className="athlete-picker" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>

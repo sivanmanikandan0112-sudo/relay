@@ -48,7 +48,7 @@ const STEPS = [
 export function HowItWorksContent() {
   return (
     <>
-      <p className="eyebrow">Under the hood</p>
+      <p className="eyebrow">UNDER THE HOOD</p>
       <h1>How Relay works</h1>
       <p className="subtitle">
         Your week in four steps. Relay does the watching so you can spend your time on the runners

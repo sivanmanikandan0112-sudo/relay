@@ -21,7 +21,7 @@ export function Injuries() {
 
   return (
     <section>
-      <p className="eyebrow">Squad health</p>
+      <p className="eyebrow">SQUAD HEALTH</p>
       <h1>Injuries</h1>
       <p className="subtitle">
         Return-to-run protocol pauses an athlete's readiness flags so expected-slow rehab paces

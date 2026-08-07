@@ -43,7 +43,7 @@ export function Brief() {
   return (
     <section>
       <p className="eyebrow">
-        Monday Brief · Week {week} · {squadName}
+        MONDAY BRIEF · WEEK {week} · {squadName}
       </p>
       <h1>Talk to these {briefList.length} this week.</h1>
       <p className="subtitle">
