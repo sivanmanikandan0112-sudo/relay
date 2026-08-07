@@ -28,9 +28,28 @@ briefRouter.get("/", async (req, res) => {
       year,
       athlete: squadId ? { squadId } : undefined,
     },
-    include: { athlete: true },
+    include: {
+      athlete: {
+        include: {
+          readinessScores: {
+            orderBy: [{ year: "desc" }, { week: "desc" }],
+            take: 6,
+          },
+        },
+      },
+    },
     orderBy: { score: "asc" },
   });
 
-  res.json(scores);
+  // Reverse each athlete's trailing scores into chronological order so the
+  // frontend can draw a left-to-right sparkline without re-sorting.
+  const withTrend = scores.map((s) => ({
+    ...s,
+    athlete: {
+      ...s.athlete,
+      readinessScores: [...s.athlete.readinessScores].reverse(),
+    },
+  }));
+
+  res.json(withTrend);
 });

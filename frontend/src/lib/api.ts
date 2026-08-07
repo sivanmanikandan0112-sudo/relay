@@ -27,7 +27,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  squads: () => request<Array<{ id: string; name: string; athleteCount: number }>>("/squads"),
+  squads: () => request<Squad[]>("/squads"),
+  athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
   brief: (week: number, year: number, squadId?: string) =>
     request<ReadinessScore[]>(
       `/brief?week=${week}&year=${year}${squadId ? `&squadId=${squadId}` : ""}`
@@ -35,10 +36,27 @@ export const api = {
   injuries: (squadId?: string) =>
     request<Injury[]>(`/injuries${squadId ? `?squadId=${squadId}` : ""}`),
   addNote: (athleteId: string, body: string) =>
-    request("/notes", { method: "POST", body: JSON.stringify({ athleteId, body }) }),
+    request<Note>("/notes", { method: "POST", body: JSON.stringify({ athleteId, body }) }),
+  notesForAthlete: (athleteId: string) => request<Note[]>(`/notes/athlete/${athleteId}`),
+  readinessHistory: (athleteId: string) =>
+    request<ReadinessScoreRecord[]>(`/athletes/${athleteId}/readiness-history`),
+  submitWellness: (entry: WellnessInput) =>
+    request<WellnessEntry>("/wellness", { method: "POST", body: JSON.stringify(entry) }),
 };
 
-export interface ReadinessScore {
+export interface Squad {
+  id: string;
+  name: "GIRLS" | "BOYS";
+  athleteCount: number;
+}
+
+export interface Athlete {
+  id: string;
+  name: string;
+  squadId: string;
+}
+
+export interface ReadinessScoreRecord {
   id: string;
   athleteId: string;
   week: number;
@@ -46,7 +64,10 @@ export interface ReadinessScore {
   score: number;
   status: "READY" | "EASE_BACK" | "BACK_OFF";
   summary: string;
-  athlete: { id: string; name: string; squadId: string };
+}
+
+export interface ReadinessScore extends ReadinessScoreRecord {
+  athlete: Athlete & { readinessScores: ReadinessScoreRecord[] };
 }
 
 export interface Injury {
@@ -57,4 +78,26 @@ export interface Injury {
   startDate: string;
   endDate: string | null;
   athlete: { id: string; name: string };
+}
+
+export interface Note {
+  id: string;
+  athleteId: string;
+  body: string;
+  createdAt: string;
+  coach: { id: string; name: string };
+}
+
+export interface WellnessInput {
+  athleteId: string;
+  sleepHours: number;
+  mood: number;
+  energy: number;
+  soreness: number;
+  stress: number;
+}
+
+export interface WellnessEntry extends WellnessInput {
+  id: string;
+  date: string;
 }

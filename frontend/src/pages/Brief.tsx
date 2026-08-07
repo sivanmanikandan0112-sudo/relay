@@ -1,28 +1,47 @@
 import { useEffect, useState } from "react";
-import { api, type ReadinessScore } from "../lib/api";
+import { useOutletContext } from "react-router-dom";
+import { api, type ReadinessScore, type Squad } from "../lib/api";
+import { STATUS_LABEL, STATUS_COLOR, statusClass } from "../lib/status";
+import { Sparkline } from "../components/Sparkline";
 
-const STATUS_LABEL: Record<ReadinessScore["status"], string> = {
-  BACK_OFF: "Back off",
-  EASE_BACK: "Ease back",
-  READY: "Ready",
-};
+const SQUAD_LABEL: Record<Squad["name"], string> = { GIRLS: "Girls", BOYS: "Boys" };
+
+function currentIsoWeek(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
 
 export function Brief() {
+  const { squadId } = useOutletContext<{ squadId: string | null }>();
   const [scores, setScores] = useState<ReadinessScore[]>([]);
+  const [squadName, setSquadName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
+  const week = currentIsoWeek(new Date());
+  const year = new Date().getFullYear();
+
   useEffect(() => {
+    if (!squadId) return;
     api
-      .brief(31, 2026)
+      .brief(week, year, squadId)
       .then(setScores)
       .catch((e) => setError(e.message));
-  }, []);
+    api.squads().then((squads) => {
+      const squad = squads.find((s) => s.id === squadId);
+      if (squad) setSquadName(SQUAD_LABEL[squad.name]);
+    });
+  }, [squadId, week, year]);
 
   const flagged = scores.filter((s) => s.status !== "READY");
 
   return (
     <section>
-      <p className="eyebrow">Monday Brief · Week 31</p>
+      <p className="eyebrow">
+        Monday Brief · Week {week} · {squadName}
+      </p>
       <h1>Talk to these {flagged.length} this week.</h1>
       <p className="subtitle">
         Relay read every athlete's trend, wellness and load, and turned it into a decision — not a
@@ -32,13 +51,17 @@ export function Brief() {
       {error && <p className="error">{error}</p>}
 
       <div className="brief-list">
-        {scores.map((s, i) => (
-          <article key={s.id} className={`brief-card status-${s.status.toLowerCase()}`}>
-            <div className="brief-rank">{i + 1}</div>
+        {flagged.map((s, i) => (
+          <article key={s.id} className={`brief-card ${statusClass(s.status)}`}>
+            <div className="brief-rank" style={{ background: STATUS_COLOR[s.status] }}>
+              {i + 1}
+            </div>
             <div className="brief-body">
               <div className="brief-header">
                 <h3>{s.athlete.name}</h3>
-                <span className="badge">{STATUS_LABEL[s.status]}</span>
+                <span className="badge" style={{ borderColor: STATUS_COLOR[s.status], color: STATUS_COLOR[s.status] }}>
+                  {STATUS_LABEL[s.status]}
+                </span>
               </div>
               <p>{s.summary}</p>
               <div className="brief-actions">
@@ -47,7 +70,10 @@ export function Brief() {
               </div>
             </div>
             <div className="brief-score">
-              <div className="score-value">{s.score}</div>
+              <Sparkline values={s.athlete.readinessScores.map((r) => r.score)} colorVar={STATUS_COLOR[s.status]} />
+              <div className="score-value" style={{ color: STATUS_COLOR[s.status] }}>
+                {s.score}
+              </div>
               <div className="score-label">ready</div>
             </div>
           </article>

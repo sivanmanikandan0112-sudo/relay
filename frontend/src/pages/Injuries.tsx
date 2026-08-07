@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import { api, type Injury } from "../lib/api";
 
 export function Injuries() {
+  const { squadId } = useOutletContext<{ squadId: string | null }>();
   const [injuries, setInjuries] = useState<Injury[]>([]);
 
   useEffect(() => {
-    api.injuries().then(setInjuries).catch(() => {});
-  }, []);
+    if (!squadId) return;
+    api.injuries(squadId).then(setInjuries).catch(() => {});
+  }, [squadId]);
 
   return (
     <section>

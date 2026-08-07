@@ -10,3 +10,4 @@ npm-debug.log*
 coverage/
 .vscode/
 backend/generated/
+*.tsbuildinfo
