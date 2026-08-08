@@ -353,8 +353,8 @@ input.ath-input, select.ath-input {
 .drawer-stat .value { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
 .drawer-section-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: .5px; margin: 22px 0 8px; display: flex; align-items: center; justify-content: space-between; }
 .drawer-grid-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 12px 12px 8px; }
-.drawer-grid-head { display: grid; grid-template-columns: 52px repeat(4, 1fr); gap: 6px; font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); letter-spacing: .3px; margin-bottom: 8px; text-align: center; }
-.drawer-grid-row { display: grid; grid-template-columns: 52px repeat(4, 1fr); gap: 6px; align-items: center; margin-bottom: 6px; }
+.drawer-grid-head { display: grid; grid-template-columns: 46px repeat(5, 1fr); gap: 5px; font-family: var(--font-mono); font-size: 8.5px; color: var(--text-dim); letter-spacing: .2px; margin-bottom: 8px; text-align: center; }
+.drawer-grid-row { display: grid; grid-template-columns: 46px repeat(5, 1fr); gap: 5px; align-items: center; margin-bottom: 6px; }
 .drawer-grid-date { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim-2); }
 .drawer-chip { width: 26px; height: 26px; border-radius: 7px; color: var(--bg); font-family: var(--font-display); font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
 .drawer-legend { font-family: var(--font-mono); font-size: 9px; color: var(--text-faint); margin-top: 6px; line-height: 1.5; }

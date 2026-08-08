@@ -22,3 +22,18 @@ export function sorenessColor(value: number): string {
 export function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+export function withinLastDays(iso: string, days: number, now: Date = new Date()): boolean {
+  const since = now.getTime() - days * 86400000;
+  return new Date(iso).getTime() >= since;
+}
+
+// Fractional minutes -> "H:MM:SS" (or "MM:SS" under an hour), for display.
+export function formatDuration(minutes: number): string {
+  const totalSeconds = Math.round(minutes * 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}

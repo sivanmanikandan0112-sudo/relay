@@ -39,7 +39,16 @@ authRouter.post("/login", async (req, res) => {
 
   const token = signToken({ sub: user.id, role: user.role });
   const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
-  res.json({ token, user: { ...publicUser(user), athleteId } });
+
+  let gender: string | null = null;
+  let hasCoach = false;
+  if (athleteId) {
+    const athlete = await prisma.athlete.findUnique({ where: { id: athleteId }, select: { gender: true } });
+    gender = athlete?.gender ?? null;
+    hasCoach = (await prisma.coachAthlete.count({ where: { athleteId } })) > 0;
+  }
+
+  res.json({ token, user: { ...publicUser(user), athleteId, gender, hasCoach } });
 });
 
 // --- Forgot / reset password -------------------------------------------

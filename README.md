@@ -51,6 +51,14 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
 - After login, coaches land on **Brief** and only see the Coach tabs (Brief / Dashboard / Injuries
   / Invite / How it works); athletes land on **Check-in** and only see the Athlete tabs (Check-in /
   My Runs / How it works). There's no view-switcher — each role sees its own app.
+- **Athlete gender gate**: an athlete with no gender on file is blocked by a full-screen prompt
+  right after login — they can't reach any other screen until they set it
+  (`PATCH /api/me/gender`). Seeded athletes deliberately start with no gender set, so any athlete
+  login demonstrates this.
+- **Coach-required gating**: an athlete not yet on *any* coach's roster (`hasCoach: false`) sees no
+  Check-in / My Runs / How it works tabs at all — just a "waiting on a coach" notice. Five of the
+  ten seeded athletes are intentionally left unassigned so this is easy to demo (e.g. sign in as
+  `ava.thompson`).
 
 ### Bulk athlete invites
 
@@ -68,12 +76,18 @@ directly and the UI shows a "continue to reset" link built from it instead of em
 ## Data model
 
 - **Squad** — a roster grouping (Girls, Boys)
-- **Athlete** — belongs to a squad; optionally linked to a `User` for athlete login
+- **Athlete** — belongs to a squad; optionally linked to a `User` for athlete login; `gender`
+  (`FEMALE` / `MALE` / `NONBINARY` / `PREFER_NOT_TO_SAY`), required at login if unset
 - **CoachAthlete** — many-to-many roster assignment between coach `User`s and `Athlete`s
 - **Invite** — a coach's bulk-invited email + status
 - **PasswordResetToken** — simulated forgot-password flow
-- **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus an optional note
-- **TrainingLoad** — a logged run: type, distance, duration, RPE → session load (RPE × duration)
+- **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus
+  an optional note. An athlete can only ever write their own (the athlete ID comes from the JWT,
+  never the request body), and can check in more than once a day.
+- **TrainingLoad** — a logged run: athlete-entered title, distance in miles (2 decimal places),
+  duration (entered as HH:MM:SS, stored as fractional minutes), RPE → session load (RPE ×
+  duration). Same self-only rule as check-ins, and same multiple-per-day allowance (split
+  workouts, two-a-days). The athlete confirms a summary of the run before it's saved.
 - **ReadinessScore** — a weekly snapshot: score (0–100) + status. Recomputed automatically
   whenever an athlete submits a check-in, logs a run, or their injury status changes — see
   [`lib/scoring.ts`](backend/src/lib/scoring.ts).
@@ -96,6 +110,13 @@ The score itself combines an acute:chronic training-load ratio (the last 7 days 
 the last 28) with how far recent wellness check-ins sit below a normal baseline — see
 [`lib/readiness.ts`](backend/src/lib/readiness.ts) for the exact formula and the plain-language
 message generator behind each Brief card.
+
+### Coach's athlete detail view
+
+Clicking an athlete on Brief or the Board opens a detail drawer showing that athlete's full last 7
+days: every wellness check-in (all 5 fields, color-coded) and every logged run — not a fixed
+number of most-recent rows, so an athlete who checked in or logged runs more than once a day still
+shows everything from the week.
 
 ## Getting started
 
@@ -175,7 +196,8 @@ All routes are under `/api`. Aside from `/api/auth/*` and `/api/health`, every r
 | POST | `/api/auth/login` | Log in with username + password, returns a JWT |
 | POST | `/api/auth/forgot-password` | Simulated reset-token issuance (no email provider) |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
-| GET | `/api/me` | Current user's profile (role, linked athleteId if an athlete) |
+| GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach if an athlete) |
+| PATCH | `/api/me/gender` | Set your gender (athlete only — required before anything else works) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |

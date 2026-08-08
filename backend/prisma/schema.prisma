@@ -40,6 +40,13 @@ enum InviteStatus {
   REJECTED
 }
 
+enum Gender {
+  FEMALE
+  MALE
+  NONBINARY
+  PREFER_NOT_TO_SAY
+}
+
 model User {
   id            String    @id @default(cuid())
   username      String    @unique
@@ -106,6 +113,7 @@ model Squad {
 model Athlete {
   id             String           @id @default(cuid())
   name           String
+  gender         Gender?          // required at athlete login if unset; nullable until then
   squad          Squad            @relation(fields: [squadId], references: [id])
   squadId        String
   user           User?            @relation(fields: [userId], references: [id])
@@ -139,11 +147,11 @@ model TrainingLoad {
   athlete       Athlete  @relation(fields: [athleteId], references: [id])
   athleteId     String
   date          DateTime @default(now())
-  runType       String // e.g. "Easy", "Tempo", "Long run", "Race"
-  distanceMiles Float?
-  durationMin   Int
+  runType       String // athlete-entered run title, e.g. "Easy 5mi" or "Tempo intervals"
+  distanceMiles Float? // up to 2 decimal places, enforced client-side
+  durationMin   Float // fractional minutes, converted from an HH:MM:SS input
   rpe           Int // rate of perceived exertion, 1-10
-  load          Int // rpe * durationMin, session load
+  load          Float // rpe * durationMin, session load
 
   @@index([athleteId, date])
 }

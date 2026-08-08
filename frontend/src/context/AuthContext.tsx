@@ -5,6 +5,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<AuthUser>;
   logout: () => void;
+  updateUser: (patch: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -29,7 +30,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+  // For fields that change after login without a full re-auth, e.g. once an
+  // athlete sets their gender through the gate.
+  function updateUser(patch: Partial<AuthUser>) {
+    setUser((current) => {
+      if (!current) return current;
+      const next = { ...current, ...patch };
+      localStorage.setItem("relay_user", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  return <AuthContext.Provider value={{ user, login, logout, updateUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

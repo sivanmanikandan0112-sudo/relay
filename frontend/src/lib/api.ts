@@ -41,6 +41,8 @@ export const api = {
       body: JSON.stringify({ token, newPassword }),
     }),
   me: () => request<AuthUser>("/me"),
+  setGender: (gender: Gender) =>
+    request<{ gender: Gender }>("/me/gender", { method: "PATCH", body: JSON.stringify({ gender }) }),
 
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
@@ -73,6 +75,8 @@ export const api = {
     request<Invite>(`/invites/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 };
 
+export type Gender = "FEMALE" | "MALE" | "NONBINARY" | "PREFER_NOT_TO_SAY";
+
 export interface AuthUser {
   id: string;
   username: string;
@@ -83,6 +87,8 @@ export interface AuthUser {
   role: "COACH" | "ATHLETE";
   athleteId: string | null;
   squadId?: string | null;
+  gender?: Gender | null;
+  hasCoach?: boolean;
 }
 
 export interface Squad {

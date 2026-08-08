@@ -2,6 +2,8 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Squad } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { GenderGate } from "./GenderGate";
+import { NoCoachNotice } from "./NoCoachNotice";
 
 const COACH_TABS = [
   { to: "/brief", label: "Brief" },
@@ -32,6 +34,9 @@ export function Layout() {
   const [squadId, setSquadId] = useState<string | null>(null);
 
   const isCoach = user?.role === "COACH";
+  const isAthlete = user?.role === "ATHLETE";
+  const needsGender = isAthlete && !user?.gender;
+  const needsCoach = isAthlete && !!user?.gender && !user?.hasCoach;
 
   useEffect(() => {
     if (!isCoach) return;
@@ -45,6 +50,9 @@ export function Layout() {
     logout();
     navigate("/login", { replace: true });
   }
+
+  // Required at login, before any of the rest of the app is usable.
+  if (needsGender) return <GenderGate />;
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "short", year: "numeric" });
@@ -77,35 +85,35 @@ export function Layout() {
         </div>
       </header>
 
-      <nav className="navbar">
-        {tabs.map((tab) => (
-          <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `navbar-tab ${isActive ? "active" : ""}`}>
-            {tab.label}
-          </NavLink>
-        ))}
-        {isCoach && (
-          <>
-            <div className="navbar-spacer" />
-            <div className="navbar-squad">
-              <span className="navbar-squad-label">SQUAD</span>
-              {squads.map((squad) => (
-                <button
-                  key={squad.id}
-                  className={`squad-pill ${squadId === squad.id ? "active" : ""}`}
-                  style={{ borderColor: squadId === squad.id ? (squad.name === "GIRLS" ? "#d97fb0" : "#7fb0d9") : undefined }}
-                  onClick={() => setSquadId(squad.id)}
-                >
-                  <span className="dot" style={{ background: squad.name === "GIRLS" ? "#d97fb0" : "#7fb0d9" }} />
-                  {squad.name === "GIRLS" ? "Girls" : "Boys"} <span className="count">{squad.athleteCount}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </nav>
-      <main className="page">
-        <Outlet context={{ squadId }} />
-      </main>
+      {!needsCoach && (
+        <nav className="navbar">
+          {tabs.map((tab) => (
+            <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `navbar-tab ${isActive ? "active" : ""}`}>
+              {tab.label}
+            </NavLink>
+          ))}
+          {isCoach && (
+            <>
+              <div className="navbar-spacer" />
+              <div className="navbar-squad">
+                <span className="navbar-squad-label">SQUAD</span>
+                {squads.map((squad) => (
+                  <button
+                    key={squad.id}
+                    className={`squad-pill ${squadId === squad.id ? "active" : ""}`}
+                    style={{ borderColor: squadId === squad.id ? (squad.name === "GIRLS" ? "#d97fb0" : "#7fb0d9") : undefined }}
+                    onClick={() => setSquadId(squad.id)}
+                  >
+                    <span className="dot" style={{ background: squad.name === "GIRLS" ? "#d97fb0" : "#7fb0d9" }} />
+                    {squad.name === "GIRLS" ? "Girls" : "Boys"} <span className="count">{squad.athleteCount}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </nav>
+      )}
+      <main className="page">{needsCoach ? <NoCoachNotice /> : <Outlet context={{ squadId }} />}</main>
     </div>
   );
 }

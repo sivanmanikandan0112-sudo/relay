@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type AthleteDetail, type Note, type ReadinessScoreRecord, type Run, type WellnessEntry } from "../lib/api";
 import { STATUS_COLOR, STATUS_LABEL, scoreIsMeaningful } from "../lib/status";
-import { formatShortDate, initials, ratingColor, sorenessColor } from "../lib/format";
+import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
 
 interface DetailDrawerProps {
@@ -44,8 +44,9 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
   }
 
   const statusColor = latest ? STATUS_COLOR[latest.status] : "#4ea373";
-  const messages = wellness.filter((w) => w.msg);
-  const gridRows = wellness.slice(0, 7);
+  const lastWeekWellness = wellness.filter((w) => withinLastDays(w.date, 7));
+  const lastWeekRuns = runs.filter((r) => withinLastDays(r.date, 7));
+  const messages = lastWeekWellness.filter((w) => w.msg);
 
   return (
     <>
@@ -100,9 +101,10 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
               <div>SLEEP</div>
               <div>ENGY</div>
               <div>MOOD</div>
+              <div>MOTIV</div>
               <div>SORE</div>
             </div>
-            {gridRows.map((r) => (
+            {lastWeekWellness.map((r) => (
               <div className="drawer-grid-row" key={r.id}>
                 <div className="drawer-grid-date">{formatShortDate(r.date)}</div>
                 <div style={{ display: "flex", justifyContent: "center" }}>
@@ -121,13 +123,18 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "center" }}>
+                  <span className="drawer-chip" style={{ background: ratingColor(r.motivation) }}>
+                    {r.motivation}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "center" }}>
                   <span className="drawer-chip" style={{ background: sorenessColor(r.soreness) }}>
                     {r.soreness}
                   </span>
                 </div>
               </div>
             ))}
-            {gridRows.length === 0 && <div className="drawer-legend">No check-ins logged yet.</div>}
+            {lastWeekWellness.length === 0 && <div className="drawer-legend">No check-ins in the last 7 days.</div>}
             <div className="drawer-legend">green good · amber watch · red low — soreness inverted (high = worse)</div>
           </div>
 
@@ -147,9 +154,9 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
             </>
           )}
 
-          <div className="drawer-section-label">RECENT RUNS</div>
+          <div className="drawer-section-label">RUNS · LAST 7 DAYS</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {runs.slice(0, 3).map((r) => (
+            {lastWeekRuns.map((r) => (
               <div className="drawer-run-card" key={r.id}>
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#8a97ad", width: 42, flex: "none" }}>
                   {formatShortDate(r.date)}
@@ -157,13 +164,13 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontSize: 14 }}>{r.runType}</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#8a97ad" }}>
-                    {r.distanceMiles ? `${r.distanceMiles}mi · ` : ""}
-                    {r.durationMin}min · RPE {r.rpe}/10
+                    {r.distanceMiles ? `${r.distanceMiles.toFixed(2)}mi · ` : ""}
+                    {formatDuration(r.durationMin)} · RPE {r.rpe}/10
                   </div>
                 </div>
               </div>
             ))}
-            {runs.length === 0 && <div className="drawer-legend">No runs logged yet.</div>}
+            {lastWeekRuns.length === 0 && <div className="drawer-legend">No runs in the last 7 days.</div>}
           </div>
 
           <div className="drawer-section-label">

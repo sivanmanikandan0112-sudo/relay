@@ -1,17 +1,34 @@
 import { useEffect, useState } from "react";
 import { api, type Note, type Run } from "../lib/api";
-import { formatShortDate } from "../lib/format";
+import { formatDuration, formatShortDate } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
+import { ConfirmRunModal } from "../components/ConfirmRunModal";
+
+function clampInt(text: string, min: number, max: number): number {
+  const n = Math.round(Number(text) || 0);
+  return Math.max(min, Math.min(max, n));
+}
+
+// Rounds to 2 decimal places without letting the field hold more.
+function roundDistance(text: string): number | undefined {
+  const n = Number(text);
+  if (!text.trim() || Number.isNaN(n)) return undefined;
+  return Math.round(n * 100) / 100;
+}
 
 export function AthleteRuns() {
   const { user } = useAuth();
   const athleteId = user?.athleteId ?? null;
   const [runs, setRuns] = useState<Run[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [logType, setLogType] = useState("");
-  const [logDist, setLogDist] = useState("");
-  const [logTime, setLogTime] = useState("");
-  const [logRpe, setLogRpe] = useState<number | null>(null);
+
+  const [title, setTitle] = useState("");
+  const [distance, setDistance] = useState("");
+  const [hh, setHh] = useState("0");
+  const [mm, setMm] = useState("0");
+  const [ss, setSs] = useState("0");
+  const [rpe, setRpe] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function refresh() {
@@ -32,26 +49,26 @@ export function AthleteRuns() {
     );
   }
 
-  const canAdd = logType.trim().length > 0 && logRpe != null;
+  const durationMin = Number(hh) * 60 + Number(mm) + Number(ss) / 60;
+  const canAdd = title.trim().length > 0 && rpe != null && durationMin > 0;
 
-  async function handleAdd() {
-    if (!canAdd || logRpe == null) return;
+  async function handleConfirm() {
+    if (!canAdd || rpe == null) return;
     setSaving(true);
     try {
-      // "Time" is a free-text field in the log form (e.g. "34:20"); we
-      // convert it to minutes for the load calc, defaulting sensibly if
-      // it doesn't parse.
-      const parsedMin = parseTimeToMinutes(logTime) ?? 30;
       await api.logRun({
-        runType: logType.trim(),
-        distanceMiles: logDist.trim() ? Number(logDist.trim()) || undefined : undefined,
-        durationMin: parsedMin,
-        rpe: logRpe,
+        runType: title.trim(),
+        distanceMiles: roundDistance(distance),
+        durationMin,
+        rpe,
       });
-      setLogType("");
-      setLogDist("");
-      setLogTime("");
-      setLogRpe(null);
+      setTitle("");
+      setDistance("");
+      setHh("0");
+      setMm("0");
+      setSs("0");
+      setRpe(null);
+      setConfirming(false);
       refresh();
     } finally {
       setSaving(false);
@@ -71,41 +88,103 @@ export function AthleteRuns() {
             My runs
           </h1>
           <p className="page-subtitle" style={{ margin: "0 0 16px" }}>
-            Every run, with anything your coach left you.
+            Every run, with anything your coach left you. Log as many as you need in a day — split
+            workouts and two-a-days are fine.
           </p>
         </div>
       </div>
 
       <div className="log-run-panel">
         <div className="field-hint">LOG A RUN MANUALLY</div>
-        <div className="log-run-grid">
-          <input
-            className="ath-input"
-            value={logType}
-            onChange={(e) => setLogType(e.target.value)}
-            placeholder="Workout (e.g. Easy 5mi)"
-          />
-          <input className="ath-input" value={logDist} onChange={(e) => setLogDist(e.target.value)} placeholder="Distance" />
-          <input className="ath-input" value={logTime} onChange={(e) => setLogTime(e.target.value)} placeholder="Time" />
+        <label className="field-hint" style={{ display: "block", marginTop: 10, marginBottom: 4, color: "var(--text-dim-2)" }}>
+          Title
+        </label>
+        <input
+          className="ath-input"
+          style={{ width: "100%", marginBottom: 10 }}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Easy 5mi, Tempo intervals"
+        />
+
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="field-hint" style={{ color: "var(--text-dim-2)" }}>
+              Distance (miles)
+            </span>
+            <input
+              className="ath-input"
+              style={{ width: 130 }}
+              type="number"
+              step="0.01"
+              min="0"
+              max="200"
+              value={distance}
+              onChange={(e) => setDistance(e.target.value)}
+              placeholder="0.00"
+            />
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="field-hint" style={{ color: "var(--text-dim-2)" }}>
+              Duration (hh:mm:ss)
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                className="ath-input"
+                style={{ width: 52, textAlign: "center" }}
+                type="number"
+                min={0}
+                max={23}
+                value={hh}
+                onChange={(e) => setHh(String(clampInt(e.target.value, 0, 23)))}
+              />
+              <span style={{ color: "var(--text-dim)" }}>:</span>
+              <input
+                className="ath-input"
+                style={{ width: 52, textAlign: "center" }}
+                type="number"
+                min={0}
+                max={59}
+                value={mm}
+                onChange={(e) => setMm(String(clampInt(e.target.value, 0, 59)))}
+              />
+              <span style={{ color: "var(--text-dim)" }}>:</span>
+              <input
+                className="ath-input"
+                style={{ width: 52, textAlign: "center" }}
+                type="number"
+                min={0}
+                max={59}
+                value={ss}
+                onChange={(e) => setSs(String(clampInt(e.target.value, 0, 59)))}
+              />
+            </div>
+          </label>
         </div>
-        <div className="rpe-row">
+
+        <div className="rpe-row" style={{ marginTop: 14 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div className="field-hint" style={{ marginBottom: 6 }}>
-              How hard did it feel? · <span style={{ color: logRpe ? "#d9703f" : "#7c88a0" }}>{logRpe ? `${logRpe}/10` : "not set yet"}</span>
+              How hard did it feel? · <span style={{ color: rpe ? "#d9703f" : "#7c88a0" }}>{rpe ? `${rpe}/10` : "not set yet"}</span>
             </div>
             <div className="rpe-picker">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
-                <button key={v} className={`rpe-btn ${logRpe === v ? "selected" : ""}`} onClick={() => setLogRpe(v)}>
+                <button key={v} className={`rpe-btn ${rpe === v ? "selected" : ""}`} onClick={() => setRpe(v)}>
                   {v}
                 </button>
               ))}
             </div>
           </div>
-          <button className={`add-run-btn ${canAdd ? "enabled" : "disabled"}`} disabled={!canAdd || saving} onClick={handleAdd}>
+          <button className={`add-run-btn ${canAdd ? "enabled" : "disabled"}`} disabled={!canAdd} onClick={() => setConfirming(true)}>
             Add run
           </button>
         </div>
-        {!canAdd && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#7c88a0", marginTop: 8 }}>Add a workout name and pick how hard it felt to log the run.</div>}
+        {!canAdd && (
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#7c88a0", marginTop: 8 }}>
+            Add a title, a duration, and pick how hard it felt to log the run.
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -116,8 +195,8 @@ export function AthleteRuns() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="run-item-type">{r.runType}</div>
                 <div className="run-item-meta">
-                  {r.distanceMiles ? `${r.distanceMiles}mi · ` : ""}
-                  {r.durationMin}min · effort {r.rpe}/10
+                  {r.distanceMiles != null ? `${r.distanceMiles.toFixed(2)}mi · ` : ""}
+                  {formatDuration(r.durationMin)} · effort {r.rpe}/10
                 </div>
               </div>
               <button className="run-item-delete" title="Remove run" onClick={() => handleDelete(r.id)}>
@@ -149,16 +228,18 @@ export function AthleteRuns() {
           </div>
         </>
       )}
+
+      {confirming && (
+        <ConfirmRunModal
+          title={title.trim()}
+          distanceMiles={roundDistance(distance)}
+          durationMin={durationMin}
+          rpe={rpe ?? 0}
+          saving={saving}
+          onCancel={() => setConfirming(false)}
+          onConfirm={handleConfirm}
+        />
+      )}
     </div>
   );
-}
-
-function parseTimeToMinutes(text: string): number | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const parts = trimmed.split(":").map(Number);
-  if (parts.some(Number.isNaN)) return null;
-  if (parts.length === 2) return parts[0] + parts[1] / 60;
-  if (parts.length === 1) return parts[0];
-  return null;
 }

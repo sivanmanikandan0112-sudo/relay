@@ -10,14 +10,15 @@ export const trainingLoadRouter = Router();
 trainingLoadRouter.use(requireAuth);
 
 const createSchema = z.object({
-  runType: z.string().min(1).max(40),
+  runType: z.string().min(1).max(60), // athlete-entered title
   distanceMiles: z.number().min(0).max(200).optional(),
-  durationMin: z.number().int().min(1),
+  durationMin: z.number().min(0.05).max(600), // fractional minutes, from an HH:MM:SS input
   rpe: z.number().int().min(1).max(10),
 });
 
 // Same rule as wellness check-ins: a run is always logged under the
-// caller's own athlete profile.
+// caller's own athlete profile. An athlete can log more than once a day
+// (split workouts, two-a-days) — there's no uniqueness constraint per day.
 trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -26,7 +27,10 @@ trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   const athleteId = await getOwnAthleteId(req.user!.sub);
   if (!athleteId) return res.status(403).json({ error: "No athlete profile linked to this account" });
 
-  const { runType, distanceMiles, rpe, durationMin } = parsed.data;
+  const { runType, rpe, durationMin } = parsed.data;
+  // Enforce 2 decimal places server-side too, not just in the UI.
+  const distanceMiles = parsed.data.distanceMiles != null ? Math.round(parsed.data.distanceMiles * 100) / 100 : undefined;
+
   const entry = await prisma.trainingLoad.create({
     data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin },
   });
@@ -52,7 +56,7 @@ trainingLoadRouter.get("/athlete/:athleteId", async (req, res) => {
   const entries = await prisma.trainingLoad.findMany({
     where: { athleteId: req.params.athleteId },
     orderBy: { date: "desc" },
-    take: 30,
+    take: 100, // generous cap; athletes can log more than once a day
   });
   res.json(entries);
 });
