@@ -25,11 +25,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  login: (email: string, password: string) =>
-    request<{ token: string; user: { id: string; name: string; role: string } }>("/auth/login", {
+  login: (username: string, password: string) =>
+    request<{ token: string; user: AuthUser }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
+  forgotPassword: (username: string) =>
+    request<{ sent: boolean; devResetToken?: string; devNote?: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ reset: boolean }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
+    }),
+  me: () => request<AuthUser>("/me"),
+
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
   athleteDetail: (athleteId: string) => request<AthleteDetail>(`/athletes/${athleteId}`),
@@ -50,7 +62,28 @@ export const api = {
   logRun: (entry: RunInput) => request<Run>("/training-load", { method: "POST", body: JSON.stringify(entry) }),
   runsForAthlete: (athleteId: string) => request<Run[]>(`/training-load/athlete/${athleteId}`),
   deleteRun: (id: string) => request<void>(`/training-load/${id}`, { method: "DELETE" }),
+
+  invites: () => request<Invite[]>("/invites"),
+  bulkInvite: (emails: string[]) =>
+    request<{ created: number; skipped: number; invites: Invite[] }>("/invites/bulk", {
+      method: "POST",
+      body: JSON.stringify({ emails }),
+    }),
+  setInviteStatus: (id: string, status: Invite["status"]) =>
+    request<Invite>(`/invites/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 };
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  name: string;
+  role: "COACH" | "ATHLETE";
+  athleteId: string | null;
+  squadId?: string | null;
+}
 
 export interface Squad {
   id: string;
@@ -102,7 +135,6 @@ export interface Note {
 }
 
 export interface WellnessInput {
-  athleteId: string;
   sleep: number;
   soreness: number;
   mood: number;
@@ -113,11 +145,11 @@ export interface WellnessInput {
 
 export interface WellnessEntry extends WellnessInput {
   id: string;
+  athleteId: string;
   date: string;
 }
 
 export interface RunInput {
-  athleteId: string;
   runType: string;
   distanceMiles?: number;
   durationMin: number;
@@ -126,6 +158,15 @@ export interface RunInput {
 
 export interface Run extends RunInput {
   id: string;
+  athleteId: string;
   date: string;
   load: number;
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  createdAt: string;
+  respondedAt: string | null;
 }

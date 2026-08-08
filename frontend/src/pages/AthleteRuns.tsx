@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { api, type Note, type Run } from "../lib/api";
 import { formatShortDate } from "../lib/format";
+import { useAuth } from "../context/AuthContext";
 
-interface AthleteRunsProps {
-  athleteId: string;
-}
-
-export function AthleteRuns({ athleteId }: AthleteRunsProps) {
+export function AthleteRuns() {
+  const { user } = useAuth();
+  const athleteId = user?.athleteId ?? null;
   const [runs, setRuns] = useState<Run[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [logType, setLogType] = useState("");
@@ -16,14 +15,22 @@ export function AthleteRuns({ athleteId }: AthleteRunsProps) {
   const [saving, setSaving] = useState(false);
 
   function refresh() {
+    if (!athleteId) return;
     api.runsForAthlete(athleteId).then(setRuns);
     api.notesForAthlete(athleteId).then(setNotes);
   }
 
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId]);
+  useEffect(refresh, [athleteId]);
+
+  if (!athleteId) {
+    return (
+      <div className="ath-wrap-runs">
+        <p className="page-subtitle">
+          Your account isn't linked to an athlete profile yet — ask your coach to set that up.
+        </p>
+      </div>
+    );
+  }
 
   const canAdd = logType.trim().length > 0 && logRpe != null;
 
@@ -36,7 +43,6 @@ export function AthleteRuns({ athleteId }: AthleteRunsProps) {
       // it doesn't parse.
       const parsedMin = parseTimeToMinutes(logTime) ?? 30;
       await api.logRun({
-        athleteId,
         runType: logType.trim(),
         distanceMiles: logDist.trim() ? Number(logDist.trim()) || undefined : undefined,
         durationMin: parsedMin,

@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type WellnessEntry } from "../lib/api";
 import { formatShortDate } from "../lib/format";
-
-interface AthleteCheckinProps {
-  athleteId: string;
-  athleteName: string;
-}
+import { useAuth } from "../context/AuthContext";
 
 const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "soreness"; label: string; hint: string }> = [
   { key: "sleep", label: "Sleep", hint: "1 rough · 5 great" },
@@ -15,7 +11,9 @@ const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "sorenes
   { key: "soreness", label: "Soreness", hint: "1 none · 5 very sore" },
 ];
 
-export function AthleteCheckin({ athleteId, athleteName }: AthleteCheckinProps) {
+export function AthleteCheckin() {
+  const { user } = useAuth();
+  const athleteId = user?.athleteId ?? null;
   const [history, setHistory] = useState<WellnessEntry[]>([]);
   const [draft, setDraft] = useState({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
   const [msg, setMsg] = useState("");
@@ -23,23 +21,29 @@ export function AthleteCheckin({ athleteId, athleteName }: AthleteCheckinProps) 
   const [saving, setSaving] = useState(false);
 
   function refresh() {
+    if (!athleteId) return;
     api.wellnessForAthlete(athleteId).then(setHistory);
   }
 
-  useEffect(() => {
-    setSubmitted(false);
-    setMsg("");
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athleteId]);
+  useEffect(refresh, [athleteId]);
 
-  const firstName = athleteName.split(" ")[0] || athleteName;
+  if (!athleteId) {
+    return (
+      <div className="ath-wrap">
+        <p className="page-subtitle">
+          Your account isn't linked to an athlete profile yet — ask your coach to set that up.
+        </p>
+      </div>
+    );
+  }
+
+  const firstName = user?.firstName ?? "there";
   const messages = history.filter((h) => h.msg);
 
   async function handleSubmit() {
     setSaving(true);
     try {
-      await api.submitWellness({ athleteId, ...draft, msg: msg.trim() || undefined });
+      await api.submitWellness({ ...draft, msg: msg.trim() || undefined });
       setSubmitted(true);
       refresh();
     } finally {

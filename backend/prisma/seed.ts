@@ -5,6 +5,9 @@ import { recomputeReadiness } from "../src/lib/scoring.js";
 
 const prisma = new PrismaClient();
 
+// Shared password for every seeded account, for local testing only.
+const SEED_PASSWORD = "Relay2026!";
+
 function currentIsoWeek(date: Date): { week: number; year: number } {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -16,51 +19,59 @@ function currentIsoWeek(date: Date): { week: number; year: number } {
 
 const NOW = new Date();
 const { week: CURRENT_WEEK, year: YEAR } = currentIsoWeek(NOW);
-const HISTORY_WEEKS = 5; // weeks before the live-computed current week
+const HISTORY_WEEKS = 5;
 
 type Archetype = "fresh" | "watch" | "risk" | "injured" | "return";
 
 interface AthleteSeed {
-  name: string;
+  first: string;
+  last: string;
+  squad: "GIRLS" | "BOYS";
   archetype: Archetype;
 }
 
-const GIRLS: AthleteSeed[] = [
-  { name: "Maya Okonkwo", archetype: "risk" },
-  { name: "Sofia Reyes", archetype: "risk" },
-  { name: "Ava Thompson", archetype: "watch" },
-  { name: "Lily Anderson", archetype: "watch" },
-  { name: "Chloe Bennett", archetype: "injured" },
-  { name: "Emma Whitfield", archetype: "return" },
-  { name: "Priya Chandra", archetype: "fresh" },
-  { name: "Noor Hassan", archetype: "fresh" },
-  { name: "Zoe Martinez", archetype: "fresh" },
+const ROSTER: AthleteSeed[] = [
+  { first: "Maya", last: "Okonkwo", squad: "GIRLS", archetype: "risk" },
+  { first: "Sofia", last: "Reyes", squad: "GIRLS", archetype: "risk" },
+  { first: "Ava", last: "Thompson", squad: "GIRLS", archetype: "watch" },
+  { first: "Lily", last: "Anderson", squad: "GIRLS", archetype: "watch" },
+  { first: "Chloe", last: "Bennett", squad: "GIRLS", archetype: "injured" },
+  { first: "Emma", last: "Whitfield", squad: "GIRLS", archetype: "return" },
+  { first: "Jonah", last: "Pruitt", squad: "BOYS", archetype: "risk" },
+  { first: "Ethan", last: "Brooks", squad: "BOYS", archetype: "watch" },
+  { first: "Marcus", last: "Webb", squad: "BOYS", archetype: "fresh" },
+  { first: "Diego", last: "Alvarez", squad: "BOYS", archetype: "fresh" },
 ];
 
-const BOYS: AthleteSeed[] = [
-  { name: "Jonah Pruitt", archetype: "risk" },
-  { name: "Ethan Brooks", archetype: "watch" },
-  { name: "Marcus Webb", archetype: "fresh" },
-  { name: "Diego Alvarez", archetype: "fresh" },
-  { name: "Owen Fitzgerald", archetype: "fresh" },
-  { name: "Kai Nakamura", archetype: "fresh" },
+const COACHES = [
+  { first: "Jordan", last: "Rivera" },
+  { first: "Sam", last: "Bennett" },
 ];
 
-// Historical score bands per archetype, for the weeks before "now" — purely
-// for the sparkline; the current week is always live-computed from real
-// seeded wellness/load rows below.
+// Coach roster assignments, by athlete username. "lily.anderson" is on
+// both, to demonstrate an athlete having more than one coach at once.
+const ROSTER_ASSIGNMENTS: Record<string, string[]> = {
+  "jordan.rivera": ["maya.okonkwo", "sofia.reyes", "lily.anderson"],
+  "sam.bennett": ["ethan.brooks", "marcus.webb", "lily.anderson"],
+};
+
 const HISTORY_RANGE: Record<Archetype, [number, number]> = {
   fresh: [70, 92],
   watch: [45, 62],
   risk: [18, 38],
-  injured: [30, 55], // trending down before the injury happened
-  return: [20, 40], // was low before injury, now recovering
+  injured: [30, 55],
+  return: [20, 40],
 };
 
+function username(first: string, last: string): string {
+  return `${first}.${last}`.toLowerCase();
+}
+function emailFor(first: string, last: string): string {
+  return `${username(first, last)}@ridgeline.edu`;
+}
 function randIn([lo, hi]: [number, number]): number {
   return Math.round(lo + Math.random() * (hi - lo));
 }
-
 function daysAgo(n: number): Date {
   return new Date(NOW.getTime() - n * 86400000);
 }
@@ -84,7 +95,6 @@ async function seedHistory(athleteId: string, name: string, archetype: Archetype
 }
 
 async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
-  // Wellness check-ins for the last 5 days.
   const wellnessBase: Record<Archetype, number> = { fresh: 4.3, watch: 3.2, risk: 2.2, injured: 3.0, return: 3.6 };
   const base = wellnessBase[archetype];
   for (let i = 0; i < 5; i++) {
@@ -94,7 +104,7 @@ async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
         athleteId,
         date: daysAgo(i),
         sleep: jitter(),
-        soreness: Math.max(1, Math.min(5, 6 - jitter())), // higher base -> lower soreness
+        soreness: Math.max(1, Math.min(5, 6 - jitter())),
         mood: jitter(),
         energy: jitter(),
         motivation: jitter(),
@@ -102,8 +112,6 @@ async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
     });
   }
 
-  // Training load: a 28-day chronic baseline, with the acute (last 7 days)
-  // spiking for "risk"/"watch" archetypes to produce a realistic ACWR.
   const chronicDaily: Record<Archetype, number> = { fresh: 35, watch: 38, risk: 40, injured: 15, return: 20 };
   const acuteDaily: Record<Archetype, number> = { fresh: 34, watch: 52, risk: 74, injured: 5, return: 18 };
 
@@ -127,56 +135,119 @@ async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
 }
 
 async function main() {
+  console.log("Clearing existing data...");
+  await prisma.passwordResetToken.deleteMany();
+  await prisma.invite.deleteMany();
+  await prisma.coachAthlete.deleteMany();
   await prisma.note.deleteMany();
   await prisma.readinessScore.deleteMany();
   await prisma.wellnessEntry.deleteMany();
   await prisma.trainingLoad.deleteMany();
   await prisma.injury.deleteMany();
   await prisma.athlete.deleteMany();
+  await prisma.user.deleteMany();
 
   const girls = await prisma.squad.upsert({ where: { name: "GIRLS" }, update: {}, create: { name: "GIRLS" } });
   const boys = await prisma.squad.upsert({ where: { name: "BOYS" }, update: {}, create: { name: "BOYS" } });
+  const squadByName = { GIRLS: girls, BOYS: boys };
 
-  const passwordHash = await bcrypt.hash("password123", 10);
-  await prisma.user.upsert({
-    where: { email: "coach@relay.app" },
-    update: {},
-    create: { email: "coach@relay.app", passwordHash, name: "Coach", role: "COACH" },
-  });
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
 
-  for (const [squad, roster] of [
-    [girls, GIRLS],
-    [boys, BOYS],
-  ] as const) {
-    for (const a of roster) {
-      const athlete = await prisma.athlete.create({ data: { name: a.name, squadId: squad.id } });
+  // --- Coaches ---
+  const coachByUsername = new Map<string, string>(); // username -> User.id
+  for (const c of COACHES) {
+    const uname = username(c.first, c.last);
+    const user = await prisma.user.create({
+      data: {
+        username: uname,
+        email: emailFor(c.first, c.last),
+        passwordHash,
+        firstName: c.first,
+        lastName: c.last,
+        role: "COACH",
+      },
+    });
+    coachByUsername.set(uname, user.id);
+  }
 
-      await seedHistory(athlete.id, a.name, a.archetype);
-      await seedWellnessAndLoad(athlete.id, a.archetype);
+  // --- Athletes (User + Athlete profile each) ---
+  const athleteByUsername = new Map<string, { athleteId: string; name: string }>();
+  for (const a of ROSTER) {
+    const uname = username(a.first, a.last);
+    const name = `${a.first} ${a.last}`;
+    const user = await prisma.user.create({
+      data: {
+        username: uname,
+        email: emailFor(a.first, a.last),
+        passwordHash,
+        firstName: a.first,
+        lastName: a.last,
+        role: "ATHLETE",
+      },
+    });
+    const athlete = await prisma.athlete.create({
+      data: { name, squadId: squadByName[a.squad].id, userId: user.id },
+    });
+    athleteByUsername.set(uname, { athleteId: athlete.id, name });
 
-      if (a.archetype === "injured") {
-        await prisma.injury.create({
-          data: { athleteId: athlete.id, description: "Right shin — suspected tibial stress", status: "ACTIVE" },
-        });
-      }
-      if (a.archetype === "return") {
-        await prisma.injury.create({
-          data: {
-            athleteId: athlete.id,
-            description: "Left hamstring strain",
-            status: "RECOVERING",
-            startDate: daysAgo(18),
-          },
-        });
-      }
+    await seedHistory(athlete.id, name, a.archetype);
+    await seedWellnessAndLoad(athlete.id, a.archetype);
 
-      // Compute the current week live from the seeded wellness/load/injury
-      // data above, exactly the way a real submission would.
-      await recomputeReadiness(athlete.id, NOW);
+    if (a.archetype === "injured") {
+      await prisma.injury.create({
+        data: { athleteId: athlete.id, description: "Right shin — suspected tibial stress", status: "ACTIVE" },
+      });
+    }
+    if (a.archetype === "return") {
+      await prisma.injury.create({
+        data: {
+          athleteId: athlete.id,
+          description: "Left hamstring strain",
+          status: "RECOVERING",
+          startDate: daysAgo(18),
+        },
+      });
+    }
+
+    await recomputeReadiness(athlete.id, NOW);
+  }
+
+  // --- Coach <-> Athlete roster assignments ---
+  for (const [coachUsername, athleteUsernames] of Object.entries(ROSTER_ASSIGNMENTS)) {
+    const coachId = coachByUsername.get(coachUsername)!;
+    for (const au of athleteUsernames) {
+      const athleteId = athleteByUsername.get(au)!.athleteId;
+      await prisma.coachAthlete.create({ data: { coachId, athleteId } });
     }
   }
 
-  console.log(`Seed complete for week ${CURRENT_WEEK}, ${YEAR}. Status colors:`, STATUS_COLOR);
+  // --- Sample invites for Jordan Rivera, so the Invite screen has data on first load ---
+  const jordanId = coachByUsername.get("jordan.rivera")!;
+  await prisma.invite.createMany({
+    data: [
+      { email: "taylor.nguyen@ridgeline.edu", status: "PENDING", invitedById: jordanId },
+      { email: "morgan.diaz@ridgeline.edu", status: "ACCEPTED", invitedById: jordanId, respondedAt: daysAgo(2) },
+      { email: "casey.kim@ridgeline.edu", status: "REJECTED", invitedById: jordanId, respondedAt: daysAgo(1) },
+    ],
+  });
+
+  console.log(`\nSeed complete for week ${CURRENT_WEEK}, ${YEAR}.`);
+  console.log("Status colors:", STATUS_COLOR);
+
+  console.log("\n=== Login credentials (all use the same password) ===");
+  console.log(`Password for every account: ${SEED_PASSWORD}\n`);
+  console.log("-- Coaches --");
+  for (const c of COACHES) {
+    console.log(`  ${username(c.first, c.last).padEnd(16)} (${c.first} ${c.last})`);
+  }
+  console.log("\n-- Athletes --");
+  for (const a of ROSTER) {
+    console.log(`  ${username(a.first, a.last).padEnd(16)} (${a.first} ${a.last}, ${a.squad}, ${a.archetype})`);
+  }
+  console.log("\n-- Roster assignments --");
+  for (const [coach, athletes] of Object.entries(ROSTER_ASSIGNMENTS)) {
+    console.log(`  ${coach} -> ${athletes.join(", ")}`);
+  }
 }
 
 main()

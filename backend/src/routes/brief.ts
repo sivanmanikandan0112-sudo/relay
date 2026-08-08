@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { getCoachAthleteIds } from "../lib/authz.js";
 
 export const briefRouter = Router();
 
-briefRouter.use(requireAuth);
+briefRouter.use(requireAuth, requireRole("COACH"));
 
 const querySchema = z.object({
   week: z.coerce.number().int(),
@@ -21,12 +22,13 @@ briefRouter.get("/", async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const { week, year, squadId } = parsed.data;
+  const athleteIds = await getCoachAthleteIds(req.user!.sub);
 
   const scores = await prisma.readinessScore.findMany({
     where: {
       week,
       year,
-      athlete: squadId ? { squadId } : undefined,
+      athlete: { id: { in: athleteIds }, squadId: squadId || undefined },
     },
     include: {
       athlete: {

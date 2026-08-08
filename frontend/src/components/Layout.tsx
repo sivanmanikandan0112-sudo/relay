@@ -1,20 +1,21 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Squad } from "../lib/api";
-import { AthleteHome } from "../pages/AthleteHome";
+import { useAuth } from "../context/AuthContext";
 
 const COACH_TABS = [
   { to: "/brief", label: "Brief" },
   { to: "/dashboard", label: "Dashboard" },
   { to: "/injuries", label: "Injuries" },
+  { to: "/invite", label: "Invite" },
   { to: "/how-it-works", label: "How it works" },
 ];
 
 const ATH_TABS = [
-  { key: "checkin", label: "Check-in" },
-  { key: "runs", label: "My Runs" },
-  { key: "how", label: "How it works" },
-] as const;
+  { to: "/checkin", label: "Check-in" },
+  { to: "/runs", label: "My Runs" },
+  { to: "/athlete-guide", label: "How it works" },
+];
 
 function currentIsoWeek(date: Date): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -25,20 +26,29 @@ function currentIsoWeek(date: Date): number {
 }
 
 export function Layout() {
-  const [viewMode, setViewMode] = useState<"COACH" | "ATHLETE">("COACH");
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [squads, setSquads] = useState<Squad[]>([]);
   const [squadId, setSquadId] = useState<string | null>(null);
-  const [athScreen, setAthScreen] = useState<(typeof ATH_TABS)[number]["key"]>("checkin");
+
+  const isCoach = user?.role === "COACH";
 
   useEffect(() => {
+    if (!isCoach) return;
     api.squads().then((data) => {
       setSquads(data);
       if (data.length > 0) setSquadId((current) => current ?? data[0].id);
     });
-  }, []);
+  }, [isCoach]);
+
+  function handleLogout() {
+    logout();
+    navigate("/login", { replace: true });
+  }
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  const tabs = isCoach ? COACH_TABS : ATH_TABS;
 
   return (
     <div className="app-shell">
@@ -56,29 +66,25 @@ export function Layout() {
               Week {currentIsoWeek(now)} · {monthLabel}
             </span>
           </div>
-          <div className="role-toggle">
-            <button className={viewMode === "COACH" ? "active" : ""} onClick={() => setViewMode("COACH")}>
-              Coach
-            </button>
-            <button className={viewMode === "ATHLETE" ? "active" : ""} onClick={() => setViewMode("ATHLETE")}>
-              Athlete
+          <div className="user-menu">
+            <span className="user-name">
+              {user?.name} <span className="user-role">{user?.role === "COACH" ? "Coach" : "Athlete"}</span>
+            </span>
+            <button className="btn-secondary" onClick={handleLogout}>
+              Log out
             </button>
           </div>
         </div>
       </header>
 
-      {viewMode === "COACH" ? (
-        <>
-          <nav className="navbar">
-            {COACH_TABS.map((tab) => (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                className={({ isActive }) => `navbar-tab ${isActive ? "active" : ""}`}
-              >
-                {tab.label}
-              </NavLink>
-            ))}
+      <nav className="navbar">
+        {tabs.map((tab) => (
+          <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `navbar-tab ${isActive ? "active" : ""}`}>
+            {tab.label}
+          </NavLink>
+        ))}
+        {isCoach && (
+          <>
             <div className="navbar-spacer" />
             <div className="navbar-squad">
               <span className="navbar-squad-label">SQUAD</span>
@@ -94,29 +100,12 @@ export function Layout() {
                 </button>
               ))}
             </div>
-          </nav>
-          <main className="page">
-            <Outlet context={{ squadId }} />
-          </main>
-        </>
-      ) : (
-        <>
-          <nav className="navbar">
-            {ATH_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                className={`navbar-tab ${athScreen === tab.key ? "active" : ""}`}
-                onClick={() => setAthScreen(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-          <main className="page">
-            <AthleteHome squads={squads} squadId={squadId} onSquadChange={setSquadId} screen={athScreen} />
-          </main>
-        </>
-      )}
+          </>
+        )}
+      </nav>
+      <main className="page">
+        <Outlet context={{ squadId }} />
+      </main>
     </div>
   );
 }

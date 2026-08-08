@@ -1,15 +1,9 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
-
-interface AuthUser {
-  id: string;
-  name: string;
-  role: string;
-}
+import { api, type AuthUser } from "../lib/api";
 
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<AuthUser>;
   logout: () => void;
 }
 
@@ -21,11 +15,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   });
 
-  async function login(email: string, password: string) {
-    const { token, user } = await api.login(email, password);
+  async function login(username: string, password: string) {
+    const { token, user } = await api.login(username, password);
     localStorage.setItem("relay_token", token);
     localStorage.setItem("relay_user", JSON.stringify(user));
     setUser(user);
+    return user;
   }
 
   function logout() {

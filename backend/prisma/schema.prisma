@@ -34,15 +34,67 @@ enum InjuryStatus {
   RESOLVED
 }
 
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  role         Role     @default(COACH)
-  athlete      Athlete?
-  notes        Note[]
-  createdAt    DateTime @default(now())
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          Role      @default(COACH)
+  athlete       Athlete?
+  notes         Note[]
+  coachAthletes CoachAthlete[]
+  invitesSent   Invite[]
+  resetTokens   PasswordResetToken[]
+  createdAt     DateTime  @default(now())
+}
+
+// Many-to-many: an athlete can have more than one coach, and a coach has a
+// roster of athletes assigned to them.
+model CoachAthlete {
+  id        String   @id @default(cuid())
+  coach     User     @relation(fields: [coachId], references: [id])
+  coachId   String
+  athlete   Athlete  @relation(fields: [athleteId], references: [id])
+  athleteId String
+  createdAt DateTime @default(now())
+
+  @@unique([coachId, athleteId])
+  @@index([athleteId])
+}
+
+// A coach's bulk-invited email addresses. No real email delivery is wired
+// up (this dev environment has no email provider configured) — accept/
+// reject exist so the status can be exercised/tested without one.
+model Invite {
+  id          String       @id @default(cuid())
+  email       String
+  status      InviteStatus @default(PENDING)
+  invitedBy   User         @relation(fields: [invitedById], references: [id])
+  invitedById String
+  createdAt   DateTime     @default(now())
+  respondedAt DateTime?
+
+  @@index([invitedById])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Squad {
@@ -63,6 +115,7 @@ model Athlete {
   readinessScores ReadinessScore[]
   injuries       Injury[]
   notes          Note[]
+  coaches        CoachAthlete[]
   createdAt      DateTime         @default(now())
 }
 
