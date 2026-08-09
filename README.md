@@ -4,6 +4,10 @@ Relay is an "overreaching radar" for high school coaches and athletes. It turns 
 training load, wellness check-ins, and recent trend into a single readiness score, then ranks the
 roster so a coach knows exactly who to check in with first — instead of scanning a dashboard.
 
+📐 **How the score is actually computed:** [`docs/math-behind-relay.md`](docs/math-behind-relay.md)
+walks through the math and stats step by step, cross-referenced against the real code — see the
+original handwritten derivation in [`proofs/`](proofs).
+
 ## Tech stack
 
 | Layer     | Choice |
@@ -35,6 +39,9 @@ relay/
 │       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, MatchingSection
 │       ├── context/      AuthContext
 │       └── lib/          api.ts (REST client), status.ts, matching.ts
+├── docs/
+│   └── math-behind-relay.md   The scoring math/stats, cross-referenced against the code
+├── proofs/             Scanned handwritten derivation the doc above is based on
 └── package.json          npm workspaces root
 ```
 
@@ -177,6 +184,16 @@ The seed script prints every username on completion. Every account uses the same
 relationship. The other 5 athletes (Ava, Chloe, Emma, Jonah, Diego) exist with full readiness/
 wellness/training history but aren't assigned to a coach — sign in as either coach and their
 roster stays scoped to just their 3.
+
+Every athlete is seeded with **8 weeks of check-ins and logged runs** (`backend/prisma/seed.ts`),
+with day-to-day and week-to-week variety instead of one flat repeated number, following one of
+five archetypes: `fresh` (steady load throughout), `watch` (load gradually creeping up), `risk`
+(a hard mileage spike the last two weeks), `injured` (an active injury with mileage crashing to
+near-zero recently), and `return` (an injury a few weeks back, now on a gradual return-to-run
+ramp). The multi-week trend shown on Brief and in the athlete detail drawer is computed by
+actually running the real scoring algorithm against that data one week at a time — not a
+fabricated per-week number — so it reflects the same math described in
+[`docs/math-behind-relay.md`](docs/math-behind-relay.md).
 
 ### Scripts
 

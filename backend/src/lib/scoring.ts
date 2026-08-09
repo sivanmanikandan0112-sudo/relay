@@ -15,7 +15,15 @@ function avgDailyLoad(loads: { date: Date; load: number }[], days: number, now: 
   const inWindow = loads.filter((l) => l.date >= since && l.date <= now);
   if (inWindow.length === 0) return 0;
   const total = inWindow.reduce((sum, l) => sum + l.load, 0);
-  return total / days;
+  // Divide by however many days of history actually exist so far, not
+  // always the full window -- otherwise an athlete who only started
+  // logging a few days ago gets a chronic average diluted by days before
+  // they'd logged anything, which inflates their acute:chronic ratio and
+  // falsely flags them as overreaching in their first few weeks.
+  const earliest = loads.reduce((min, l) => (l.date < min ? l.date : min), now);
+  const daysOfHistory = Math.max(1, Math.ceil((now.getTime() - earliest.getTime()) / 86400000) + 1);
+  const effectiveDays = Math.min(days, daysOfHistory);
+  return total / effectiveDays;
 }
 
 /**
@@ -40,7 +48,10 @@ export async function recomputeReadiness(athleteId: string, now: Date = new Date
       take: 60,
     }),
     prisma.injury.findMany({
-      where: { athleteId, status: { in: ["ACTIVE", "RECOVERING"] } },
+      // startDate <= now matters when recomputing a *past* week (seeding
+      // history, backfills): an injury shouldn't override weeks before it
+      // actually started.
+      where: { athleteId, status: { in: ["ACTIVE", "RECOVERING"] }, startDate: { lte: now } },
       orderBy: { startDate: "desc" },
     }),
   ]);

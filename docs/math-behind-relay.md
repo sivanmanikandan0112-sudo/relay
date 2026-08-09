@@ -64,7 +64,10 @@ fades. That's the motivation for the EWMA in §4.
 [`scoring.ts`](../backend/src/lib/scoring.ts) sums `TrainingLoad.load` within the last `days` days
 and divides by `days`, called once with `days=7` and once with `days=28`, and `acwr = acute /
 chronic`. **This is the plain average the notes call out as the weaker option** — see the gap noted
-in §4.
+in §4. It divides by `min(days, days of history actually on file)` rather than always the full
+window, so a newly-logging athlete's chronic average isn't diluted by days before they'd logged
+anything — without that guard, ACWR reads as artificially spiked (and risk artificially high) for
+anyone's first few weeks, which isn't a real signal.
 
 ## 4. EWMA — the proposed fix for the plain-average cliff
 
