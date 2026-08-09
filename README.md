@@ -111,6 +111,11 @@ the last 28) with how far recent wellness check-ins sit below a normal baseline 
 [`lib/readiness.ts`](backend/src/lib/readiness.ts) for the exact formula and the plain-language
 message generator behind each Brief card.
 
+For where those numbers actually come from — session load, the acute:chronic ratio, and the
+statistical model behind them, cross-referenced against what's really implemented versus what's
+still on paper — see [`docs/math-behind-relay.md`](docs/math-behind-relay.md). The original
+handwritten derivation it's based on is scanned into [`proofs/`](proofs).
+
 ### Coach's athlete detail view
 
 Clicking an athlete on Brief or the Board opens a detail drawer showing that athlete's full last 7
