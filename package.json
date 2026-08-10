@@ -12,7 +12,10 @@
     "build:backend": "npm run build -w backend",
     "build:frontend": "npm run build -w frontend",
     "lint": "npm run lint -w backend && npm run lint -w frontend",
-    "test:backend": "npm run test -w backend"
+    "test:backend": "npm run test:unit -w backend",
+    "test:backend:integration": "npm run test:integration -w backend",
+    "test:backend:e2e": "npm run test:e2e -w backend",
+    "test:backend:all": "npm run test:all -w backend"
   },
   "engines": {
     "node": ">=20"

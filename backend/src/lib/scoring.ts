@@ -8,10 +8,14 @@ import {
   MIN_HISTORY_DAYS,
   acwr,
   bandForReadiness,
+  baselineExclusionRanges,
+  buildDailySeries,
   composite,
+  currentIsoWeek,
   effortCost,
   ewmaSeries,
   isEasyRun,
+  isExcluded,
   logisticRisk,
   readinessFromRisk,
   wellDaily,
@@ -26,61 +30,6 @@ import {
 // deviation over 28 days" for the effort-cost/wellness baselines.
 const LOAD_LOOKBACK_DAYS = 90;
 const STATS_LOOKBACK_DAYS = CHRONIC_WINDOW_DAYS; // 28
-
-function currentIsoWeek(date: Date): { week: number; year: number } {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return { week, year: d.getUTCFullYear() };
-}
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-/**
- * Buckets loads into one load-total per calendar day, oldest first, from
- * `start` through `now` inclusive (days with no logged run count as 0) --
- * the Riemann-sum framing from docs/math-behind-relay.md §2, in a shape
- * the EWMA recursion in §4 can walk day by day.
- */
-function buildDailySeries(loads: { date: Date; load: number }[], start: Date, now: Date): number[] {
-  const dayCount = Math.floor((startOfDay(now).getTime() - startOfDay(start).getTime()) / 86400000) + 1;
-  const totals = new Array(Math.max(dayCount, 0)).fill(0);
-  for (const l of loads) {
-    const idx = Math.floor((startOfDay(l.date).getTime() - startOfDay(start).getTime()) / 86400000);
-    if (idx >= 0 && idx < totals.length) totals[idx] += l.load;
-  }
-  return totals;
-}
-
-interface ExclusionRange {
-  start: Date;
-  end: Date;
-}
-
-/**
- * Date ranges an athlete's own baseline (mu/sigma) shouldn't be built from:
- * an ongoing active injury (open-ended, through `now`) or a past, now-closed
- * injury (its recorded start/end). A *recovering* (return-to-run) period is
- * deliberately NOT excluded -- that data still counts toward the rolling
- * baseline, per docs/math-behind-relay.md §9; only the status display is
- * overridden for it, in resolveStatus.
- */
-function baselineExclusionRanges(
-  injuries: { status: string; startDate: Date; endDate: Date | null }[],
-  now: Date
-): ExclusionRange[] {
-  return injuries
-    .filter((i) => i.status === "ACTIVE" || i.status === "RESOLVED")
-    .map((i) => ({ start: i.startDate, end: i.status === "ACTIVE" ? now : (i.endDate ?? now) }));
-}
-
-function isExcluded(date: Date, ranges: ExclusionRange[]): boolean {
-  return ranges.some((r) => date >= r.start && date <= r.end);
-}
 
 /**
  * Every intermediate number the pipeline in docs/math-behind-relay.md

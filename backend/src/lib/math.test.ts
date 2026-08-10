@@ -5,11 +5,15 @@ import {
   COMPOSITE_WEIGHTS,
   acwr,
   bandForReadiness,
+  baselineExclusionRanges,
+  buildDailySeries,
   composite,
+  currentIsoWeek,
   effortCost,
   ewmaLambda,
   ewmaSeries,
   isEasyRun,
+  isExcluded,
   logisticRisk,
   mean,
   readinessFromRisk,
@@ -202,5 +206,102 @@ describe("§9 status bands", () => {
 
   it("a readiness of 87 (the worked example, R≈13 after the flip) reads as Fresh", () => {
     expect(bandForReadiness(readinessFromRisk(13))).toBe("FRESH");
+  });
+});
+
+describe("§2 Riemann-sum daily load accumulation (buildDailySeries)", () => {
+  const day = (n: number) => new Date(2026, 0, n); // Jan n, 2026, local midnight
+
+  it("buckets loads into one total per calendar day, oldest first", () => {
+    const loads = [
+      { date: day(1), load: 10 },
+      { date: day(3), load: 5 },
+      { date: day(3), load: 7 }, // two runs the same day -- should sum
+    ];
+    const series = buildDailySeries(loads, day(1), day(3));
+    expect(series).toEqual([10, 0, 12]);
+  });
+
+  it("fills days with no logged run as 0, not skipping them", () => {
+    const series = buildDailySeries([{ date: day(5), load: 20 }], day(1), day(5));
+    expect(series).toEqual([0, 0, 0, 0, 20]);
+  });
+
+  it("drops loads that fall outside the [start, now] window", () => {
+    const loads = [
+      { date: day(1), load: 100 }, // before the window
+      { date: day(3), load: 10 },
+      { date: day(10), load: 100 }, // after the window
+    ];
+    const series = buildDailySeries(loads, day(2), day(4));
+    expect(series).toEqual([0, 10, 0]);
+  });
+
+  it("returns a single-day series when start === now", () => {
+    expect(buildDailySeries([{ date: day(1), load: 42 }], day(1), day(1))).toEqual([42]);
+  });
+});
+
+describe("§9 injury baseline exclusion", () => {
+  const d = (n: number) => new Date(2026, 0, n);
+
+  it("excludes an ongoing ACTIVE injury's dates through `now`, open-ended", () => {
+    const ranges = baselineExclusionRanges([{ status: "ACTIVE", startDate: d(5), endDate: null }], d(10));
+    expect(isExcluded(d(4), ranges)).toBe(false); // before it started
+    expect(isExcluded(d(5), ranges)).toBe(true); // the start date itself
+    expect(isExcluded(d(8), ranges)).toBe(true); // still ongoing
+    expect(isExcluded(d(10), ranges)).toBe(true); // through "now"
+  });
+
+  it("excludes a RESOLVED injury only for its recorded start/end window", () => {
+    const ranges = baselineExclusionRanges([{ status: "RESOLVED", startDate: d(5), endDate: d(8) }], d(20));
+    expect(isExcluded(d(4), ranges)).toBe(false);
+    expect(isExcluded(d(6), ranges)).toBe(true);
+    expect(isExcluded(d(9), ranges)).toBe(false); // after it was resolved -- counts again
+  });
+
+  it("does NOT exclude a RECOVERING (return-to-run) injury's dates -- that data still counts", () => {
+    const ranges = baselineExclusionRanges([{ status: "RECOVERING", startDate: d(5), endDate: null }], d(10));
+    expect(ranges).toHaveLength(0);
+    expect(isExcluded(d(8), ranges)).toBe(false);
+  });
+
+  it("handles multiple overlapping/non-overlapping injuries at once", () => {
+    const ranges = baselineExclusionRanges(
+      [
+        { status: "RESOLVED", startDate: d(1), endDate: d(3) },
+        { status: "ACTIVE", startDate: d(15), endDate: null },
+      ],
+      d(20)
+    );
+    expect(isExcluded(d(2), ranges)).toBe(true);
+    expect(isExcluded(d(9), ranges)).toBe(false); // the gap between the two injuries
+    expect(isExcluded(d(18), ranges)).toBe(true);
+  });
+});
+
+describe("calendar: currentIsoWeek", () => {
+  it("returns the same week/year for every day Mon-Sun of an ordinary week", () => {
+    // Mon Aug 3, 2026 through Sun Aug 9, 2026 should all read as the same ISO week.
+    const days = [3, 4, 5, 6, 7, 8, 9].map((d) => new Date(2026, 7, d));
+    const weeks = days.map((d) => currentIsoWeek(d));
+    for (const w of weeks) {
+      expect(w).toEqual(weeks[0]);
+    }
+  });
+
+  it("rolls over to week 1 of the next year at a year boundary", () => {
+    // Dec 31, 2025 is a Wednesday, in the same ISO week as Jan 1-4, 2026.
+    const dec31 = currentIsoWeek(new Date(2025, 11, 31));
+    const jan1 = currentIsoWeek(new Date(2026, 0, 1));
+    expect(dec31).toEqual(jan1);
+    expect(dec31.year).toBe(2026); // ISO week-year, not calendar year
+  });
+
+  it("advances by exactly one week, seven days later", () => {
+    const week1 = currentIsoWeek(new Date(2026, 7, 3));
+    const week2 = currentIsoWeek(new Date(2026, 7, 10));
+    expect(week2.week).toBe(week1.week + 1);
+    expect(week2.year).toBe(week1.year);
   });
 });

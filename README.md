@@ -25,13 +25,21 @@ relay/
 │   ├── prisma/
 │   │   ├── schema.prisma
 │   │   └── seed.ts     Seeds coaches, athletes, rosters, sample invites
+│   ├── scripts/
+│   │   └── inspect-athlete.ts   Prints one athlete's full readiness breakdown
+│   ├── test/
+│   │   ├── testDb.ts    Shared fixture/reset helpers (integration tier)
+│   │   ├── integration/ Route tests against a shared, reset-between-tests database
+│   │   └── e2e/          Full journeys against a freshly seeded database (globalSetup.ts,
+│   │                    fixtures/seed.ts)
 │   └── src/
+│       ├── app.ts       The Express app (routes/middleware), importable with no side effects
+│       ├── index.ts     Thin entrypoint: imports app.ts and calls .listen()
 │       ├── routes/     REST endpoints (auth, me, squads, athletes, brief,
 │       │               notes, injuries, wellness, training-load, invites)
 │       ├── middleware/
-│       ├── lib/         authz.ts (roster-based access control), scoring.ts, readiness.ts,
-│       │               math.ts (the scoring formulas, unit-tested in math.test.ts)
-│       └── index.ts
+│       └── lib/         authz.ts (roster-based access control), scoring.ts, readiness.ts,
+│                       math.ts (the scoring formulas, unit-tested alongside readiness.ts)
 ├── frontend/           React SPA
 │   └── src/
 │       ├── pages/       Brief, Dashboard, Injuries, CoachInvites, How It Works,
@@ -218,10 +226,27 @@ fabricated per-week number — so it reflects the same math described in
 | `npm run build:backend` | Compile the API to `backend/dist` |
 | `npm run build:frontend` | Build the SPA to `frontend/dist` |
 | `npm run lint` | Lint both workspaces |
-| `npm run test:backend` | Run the scoring-math unit tests (`backend/src/lib/math.test.ts`) |
+| `npm run test:backend` | Unit tests only (fast, no database) |
+| `npm run test:backend:integration` | Integration tests (real API + a shared test database) |
+| `npm run test:backend:e2e` | End-to-end tests (fresh database, deterministic seed) |
+| `npm run test:backend:all` | All three tiers, in order |
 | `npm run inspect -w backend -- "<name or username>"` | Print one athlete's full readiness breakdown |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
+
+## Testing
+
+Three tiers, each with its own vitest config, none of them ever touching `relay_dev`:
+
+| Tier | Command | What it exercises | Database |
+|---|---|---|---|
+| Unit | `npm run test:backend` | Every formula in [`docs/math-behind-relay.md`](docs/math-behind-relay.md) (`backend/src/lib/math.test.ts`) plus `readiness.ts`'s status/message logic — pure functions, no I/O | none |
+| Integration | `npm run test:backend:integration` | Every route (auth, wellness, training-load, injuries, roster scoping) through the real Express app via [supertest](https://github.com/ladjs/supertest), asserting on real Postgres rows | `relay_test`, reset between tests |
+| End-to-end | `npm run test:backend:e2e` | Full multi-step journeys — an athlete logging in and reacting to check-ins/runs, a coach's brief/notes/roster isolation, the injury guardrails, the minimum-history gate — against one fixed, deterministic dataset | `relay_test`, **dropped and recreated from scratch** before the suite runs |
+
+The integration and e2e tiers both run against a real `relay_test` Postgres database (never `relay_dev`) — `npm run test:backend:integration` creates and migrates it automatically the first time, wiping just its tables between tests. `npm run test:backend:e2e` goes further: [`backend/test/e2e/globalSetup.ts`](backend/test/e2e/globalSetup.ts) drops and recreates the whole database before the suite starts, applies every migration, then seeds it with a fixed, non-random fixture — [`backend/test/e2e/fixtures/seed.ts`](backend/test/e2e/fixtures/seed.ts): 2 coaches and 7 athletes covering every archetype the e2e tests need (steady, struggling/spiking, an active injury, a return-to-run injury, a brand-new athlete under the 14-day minimum-history gate, and an athlete on a second coach's roster to prove isolation) — so every run starts from exactly the same state. Point either tier at a different database with `TEST_DATABASE_URL=postgresql://...`.
+
+`npm run test:backend:all` runs all three in order and stops at the first failure.
 
 ## REST API
 
