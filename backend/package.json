@@ -17,9 +17,11 @@
     "test:e2e": "DATABASE_URL=\"${TEST_DATABASE_URL:-postgresql://$(whoami)@localhost:5432/relay_test}\" vitest run --config vitest.e2e.config.ts",
     "test:all": "npm run test:unit --silent && npm run test:integration --silent && npm run test:e2e --silent",
     "inspect": "tsx scripts/inspect-athlete.ts",
+    "verify-roster": "tsx scripts/verify-roster-integrity.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:real-roster": "tsx prisma/seedRealRoster.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

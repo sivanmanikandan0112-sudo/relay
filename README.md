@@ -217,6 +217,33 @@ actually running the real scoring algorithm against that data one week at a time
 fabricated per-week number — so it reflects the same math described in
 [`docs/math-behind-relay.md`](docs/math-behind-relay.md).
 
+### Real-roster dataset (larger, messier, anonymized)
+
+`npm run prisma:seed:real-roster -w backend` seeds a second, additive dataset — it never touches
+the 10-athlete demo above — derived from a real cross country coach's 10-week mileage tracking
+sheets for a boys and girls team (81 athletes, 1 new coach: `coach.mileage` /
+`Relay2026!`). This exists to stress-test the app against real, messy, large-scale data: uneven
+week-to-week mileage, athletes who joined partway through the season, explicit zero-mileage
+(rest/injury) weeks, and grades/squads with very different absolute training volumes.
+
+**Every identity in it is synthetic.** The source sheets have real students' full names; none of
+them appear anywhere in this repo — [`backend/prisma/seedRealRoster.ts`](backend/prisma/seedRealRoster.ts)
+generates a deterministic pseudonym for each row from a fixed name pool, keeping only grade,
+squad, and the real (whole-number) weekly mileage totals, which get split into individual daily
+runs the same way the archetype seed's `planWeekRuns` does. Wellness check-ins don't exist in the
+source at all (it only ever tracked mileage) — those are entirely synthetic, loosely correlated
+with each week being a bigger or smaller jump than that athlete's own average so far. Missing
+weeks (blank cells in the source, not printed zeros) are read as "not on the roster yet" for
+grade 9 (joined mid-season) or "stopped reporting" for grades 10–12, and a run of 3+ leading zero
+weeks is read the same way regardless of grade — see the comments in `seedRealRoster.ts` for the
+exact rule.
+
+`npm run verify-roster -w backend` ([`backend/scripts/verify-roster-integrity.ts`](backend/scripts/verify-roster-integrity.ts))
+runs the full readiness pipeline against every athlete currently in the database and flags
+anything that shouldn't be possible — a thrown exception, NaN/Infinity anywhere in the breakdown,
+a score outside `[0, 100]`, or an invalid status — useful after seeding either dataset, and
+especially after any change to the scoring pipeline.
+
 ### Scripts
 
 | Command | What it does |
@@ -231,8 +258,10 @@ fabricated per-week number — so it reflects the same math described in
 | `npm run test:backend:e2e` | End-to-end tests (fresh database, deterministic seed) |
 | `npm run test:backend:all` | All three tiers, in order |
 | `npm run inspect -w backend -- "<name or username>"` | Print one athlete's full readiness breakdown |
+| `npm run verify-roster -w backend` | Check every athlete's readiness pipeline for NaN/out-of-range/thrown errors |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
+| `npm run prisma:seed:real-roster -w backend` | Additively seed the 81-athlete anonymized real-mileage dataset |
 
 ## Testing
 
