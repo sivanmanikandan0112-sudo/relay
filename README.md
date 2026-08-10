@@ -79,7 +79,7 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
   `DELETE FROM "CoachAthlete" WHERE "athleteId" = (SELECT id FROM "Athlete" WHERE name = 'Ava Thompson');`
   — then sign in as them.
 
-### Bulk athlete invites — real signups, no email provider
+### Bulk athlete invites — real signups, email optional
 
 Coaches bulk-invite athletes to a specific squad by email from the **Invite** tab. Accepting an
 invite is a **real account-creation flow**, not simulated: each invite gets a unique, 14-day
@@ -88,17 +88,23 @@ token (`Invite.token`/`expiresAt`); an invited athlete follows the link built fr
 lets them pick their own username/password. Submitting it creates a real `User` + `Athlete` row,
 adds them to the inviting coach's roster in the invited squad, marks the invite `ACCEPTED`, and
 logs them straight in (same response shape as `/api/auth/login`) — see
-[`routes/inviteAccept.ts`](backend/src/routes/inviteAccept.ts). This dev environment has no email
-provider configured, so nothing is actually emailed — the Invite screen has a **"copy invite
-link"** button so a coach can share it directly (text, whatever). The old "simulate accept/reject"
-buttons are still there too, for flipping an invite's status by hand to demo the UI without a real
-person completing signup.
+[`routes/inviteAccept.ts`](backend/src/routes/inviteAccept.ts).
+
+Whether the invite email actually *sends* depends on whether [`lib/email.ts`](backend/src/lib/email.ts)
+has a real provider configured (`RESEND_API_KEY` — see [Deploying](#deploying-railway-two-services)):
+unset (local dev/test, by default), nothing is actually emailed and the Invite screen's **"copy
+invite link"** button is how a coach shares it (text, whatever); set, each invite is emailed for
+real, on top of the copy-link button still being there as a fallback. The "simulate accept/reject"
+buttons are separate from either of those — they flip an invite's status by hand, for demoing the
+UI without a real person completing signup.
 
 ### Forgot password
 
 Same story: `/api/auth/forgot-password` generates a real, expiring reset token
-(`PasswordResetToken`), but since there's no email provider, the response returns the token
-directly and the UI shows a "continue to reset" link built from it instead of emailing it.
+(`PasswordResetToken`). Without a configured email provider, the response returns the token
+directly and the UI shows a "continue to reset" link built from it, instead of emailing it. With
+one configured, it emails the reset link for real and the token never appears in the API response
+at all — returning it there would defeat the point of proving the requester owns that inbox.
 
 ## Data model
 
@@ -297,7 +303,7 @@ roster gets a 403).
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Log in with username + password, returns a JWT |
-| POST | `/api/auth/forgot-password` | Simulated reset-token issuance (no email provider) |
+| POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
 | GET | `/api/invite-accept/:token` | Public: look up who invited you (no auth) |
 | POST | `/api/invite-accept/:token` | Public: create your account and log in (no auth) |
@@ -321,3 +327,55 @@ roster gets a 403).
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |
 | POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
 | PATCH | `/api/invites/:id` | Manually set an invite's status (coach only; demo/testing, not real acceptance) |
+
+## Deploying (Railway, two services)
+
+Both services deploy from this same repo, **Root Directory set to the repo root** for both (not
+`backend/`/`frontend/` — this is an npm workspaces monorepo; a per-service root directory would
+lose the workspace-hoisted `node_modules` and the root `package-lock.json`). Point each service's
+build/start at its own workspace with `-w`:
+
+| Service | Build command | Start command |
+|---|---|---|
+| Backend | `npm run build -w backend` | `npm run start -w backend` |
+| Frontend | `npm run build -w frontend` | `npm run start -w frontend` |
+
+- **Backend build** (`prisma generate && tsc`) and **start** (`prisma migrate deploy && node dist/index.js`)
+  both run Prisma steps automatically — every deploy regenerates the client and applies any new
+  migrations before the server starts. No manual migration step needed.
+- **Frontend start** is `vite preview --host 0.0.0.0 --port ${PORT:-4173}` — binds every interface
+  and Railway's injected `$PORT`, which a plain `vite preview` doesn't do by default.
+
+### Environment variables
+
+**Backend:**
+
+| Variable | Required? | Notes |
+|---|---|---|
+| `DATABASE_URL` | Yes | Point at Railway's Postgres plugin — it can inject this automatically if the plugin's attached to the service |
+| `JWT_SECRET` | Yes | A real random secret in production, not the local dev placeholder |
+| `PORT` | No | Railway sets this automatically |
+| `RESEND_API_KEY` | No | Unset → password resets and invite emails **simulate** (logged server-side, token/link returned directly in the API response — same dev-friendly behavior as always). Set → they **actually send** through [Resend](https://resend.com) and the token/link stops appearing in API responses. See [`lib/email.ts`](backend/src/lib/email.ts). |
+| `EMAIL_FROM` | No (if using Resend) | e.g. `"Relay <admin@relaycoach.app>"` — the sending domain must be verified in Resend first (see below) |
+| `FRONTEND_URL` | No (if using Resend) | The frontend's public URL, used to build links inside real emails, e.g. `https://relaycoach.app` |
+
+**Frontend:**
+
+| Variable | Required? | Notes |
+|---|---|---|
+| `VITE_API_BASE_URL` | Yes, once deployed separately from the backend | The backend's public base URL + `/api`, e.g. `https://api.relaycoach.app/api`. Unset, API calls go to `/api` on the frontend's own origin, which only works when a dev proxy or shared origin exists — see [`lib/api.ts`](frontend/src/lib/api.ts). Baked in at **build** time (Vite), so set it before the build runs, not just at runtime. |
+
+### Resend: sending from a custom domain like `admin@relaycoach.app`
+
+Yes, this works, and will send consistently — but only after the sending domain is **verified** in
+the Resend dashboard first. Add the domain there, add the SPF (`TXT`) and DKIM (`CNAME`) records it
+gives you at your DNS provider (a DMARC `TXT` record is optional but recommended), wait for it to
+show verified, then `EMAIL_FROM` can use that domain. Before verification, Resend won't send from a
+custom address at all. This is also what keeps the mail out of spam — an unverified sending domain
+gets flagged hard by Gmail/Outlook regardless of the app's code. Double-check current sending
+limits on Resend's own pricing page before assuming a given plan covers expected volume; free-tier
+caps have changed over time.
+
+If `RESEND_API_KEY` is set in an environment where `NODE_ENV` isn't `production`, or vice versa
+(`NODE_ENV=production` with no key set), the app logs a warning on startup rather than failing
+silently — check the server logs after a deploy if emails aren't showing up as expected.

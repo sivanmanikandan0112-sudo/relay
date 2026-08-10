@@ -11,6 +11,8 @@
     "dev:frontend": "npm run dev -w frontend",
     "build:backend": "npm run build -w backend",
     "build:frontend": "npm run build -w frontend",
+    "start:backend": "npm run start -w backend",
+    "start:frontend": "npm run start -w frontend",
     "lint": "npm run lint -w backend && npm run lint -w frontend",
     "test:backend": "npm run test:unit -w backend",
     "test:backend:integration": "npm run test:integration -w backend",

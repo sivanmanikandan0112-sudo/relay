@@ -1,6 +1,14 @@
 import type { ReadinessStatus } from "./status";
 
-const BASE_URL = "/api";
+// "/api" works locally because vite.config.ts proxies it to the backend
+// dev server -- but that proxy only exists in `vite dev`, not in the
+// static output `vite build` produces. Deployed as a separate service
+// (e.g. Railway, its own domain from the backend), a relative "/api" path
+// would hit the frontend's own origin and 404 every request. Set
+// VITE_API_BASE_URL at build time to the backend's real base URL
+// (e.g. "https://relay-backend.up.railway.app/api") to fix that; unset,
+// nothing changes from today's behavior.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem("relay_token");
@@ -67,7 +75,7 @@ export const api = {
 
   invites: () => request<Invite[]>("/invites"),
   bulkInvite: (emails: string[], squadId: string) =>
-    request<{ created: number; skipped: number; invites: Invite[] }>("/invites/bulk", {
+    request<{ created: number; skipped: number; invites: Invite[]; emailSent: boolean }>("/invites/bulk", {
       method: "POST",
       body: JSON.stringify({ emails, squadId }),
     }),

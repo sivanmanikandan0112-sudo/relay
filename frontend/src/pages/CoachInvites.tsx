@@ -53,8 +53,9 @@ export function CoachInvites() {
     try {
       const res = await api.bulkInvite(emails, squadId);
       setFeedback(
-        `Sent ${res.created} invite${res.created === 1 ? "" : "s"}` +
-          (res.skipped > 0 ? ` · ${res.skipped} already pending or accepted, skipped` : "")
+        `${res.emailSent ? "Emailed" : "Created"} ${res.created} invite${res.created === 1 ? "" : "s"}` +
+          (res.skipped > 0 ? ` · ${res.skipped} already pending or accepted, skipped` : "") +
+          (res.emailSent ? "" : " — copy each link below to share it")
       );
       setRaw("");
       refresh();
@@ -85,10 +86,10 @@ export function CoachInvites() {
       <p className="eyebrow-mono">ROSTER</p>
       <h1 className="page-title">Invite athletes</h1>
       <p className="page-subtitle">
-        Paste one email per line (or comma-separated) to bulk-invite athletes to a squad. This dev environment
-        has no email provider configured, so nothing is actually emailed — copy each invite's link below and
-        share it directly (text, email, whatever) for a real athlete to create their own account, or use the
-        status buttons to simulate a response while testing the UI.
+        Paste one email per line (or comma-separated) to bulk-invite athletes to a squad. If email sending isn't
+        configured, nothing is actually emailed — copy each invite's link below and share it directly (text,
+        email, whatever) instead. Either way, a real athlete follows that link to create their own account, or
+        use the status buttons to simulate a response while testing the UI.
       </p>
 
       <div className="panel" style={{ marginTop: 0 }}>

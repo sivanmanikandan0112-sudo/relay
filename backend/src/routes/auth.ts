@@ -5,6 +5,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { signToken } from "../lib/auth.js";
 import { getOwnAthleteId } from "../lib/authz.js";
+import { emailEnabled, sendEmail } from "../lib/email.js";
+import { env } from "../lib/env.js";
 
 export const authRouter = Router();
 
@@ -52,9 +54,12 @@ authRouter.post("/login", async (req, res) => {
 });
 
 // --- Forgot / reset password -------------------------------------------
-// No email provider is configured in this dev environment, so instead of
-// sending an email we return the reset link directly in the response. A
-// real deployment would email resetUrl instead of returning it.
+// In production (RESEND_API_KEY set), this actually emails resetUrl and
+// the token never appears in the API response -- returning it alongside a
+// real send would defeat the point of proving the requester owns that
+// inbox. Without a configured provider (local dev/test), it's simulated:
+// logged to the console, and the token comes back in the response instead
+// so the UI can show a "continue to reset" link directly.
 const forgotSchema = z.object({ username: z.string().min(1) });
 
 authRouter.post("/forgot-password", async (req, res) => {
@@ -74,6 +79,16 @@ authRouter.post("/forgot-password", async (req, res) => {
   await prisma.passwordResetToken.create({
     data: { userId: user.id, token, expiresAt: new Date(Date.now() + 30 * 60 * 1000) },
   });
+  const resetUrl = `${env.frontendUrl}/reset-password?token=${token}`;
+
+  if (emailEnabled) {
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your Relay password",
+      html: `<p>Hi ${user.firstName},</p><p>Click below to reset your Relay password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+    });
+    return res.json({ sent: true });
+  }
 
   res.json({ sent: true, devResetToken: token, devNote: "No email provider configured — use this token directly." });
 });

@@ -10,4 +10,17 @@ export const env = {
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
   port: Number(process.env.PORT ?? 4000),
+  nodeEnv: process.env.NODE_ENV ?? "development",
+
+  // Email: intentionally optional. Unset (the default in dev/test) -- see
+  // lib/email.ts -- means "simulate": log to the console and let the
+  // caller fall back to returning the token/link directly in the API
+  // response, same as this app has always done. Set RESEND_API_KEY (only
+  // meant to be set in production) to send real email through Resend
+  // instead. Never required() -- dev/test must work with zero email setup.
+  resendApiKey: process.env.RESEND_API_KEY,
+  emailFrom: process.env.EMAIL_FROM ?? "Relay <onboarding@resend.dev>",
+  // Used to build links embedded in real emails (reset-password, accept-invite);
+  // the frontend origin serving those pages, e.g. "https://relaycoach.app".
+  frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
 };
