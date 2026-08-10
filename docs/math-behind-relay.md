@@ -2,9 +2,11 @@
 
 Relay's readiness score is built from a handful of sports-science ideas: session load (Foster's
 RPE method), accumulating load over time, an acute:chronic workload ratio, and how far an
-athlete's self-reported wellness sits from normal. The original derivation — six pages of
+athlete's self-reported wellness sits from normal. The original derivation — eleven pages of
 handwritten notes and worked examples — is scanned into [`proofs/`](../proofs) (`IMG_4417.jpg`
-through `IMG_4423.jpg`, in order).
+through `IMG_4428.jpg`, in order; `IMG_4421` wasn't part of the photographed set). The first six
+pages (§1–§6) work out the load and wellness math; the last five (§6's z-score extension through
+§9) work out how those pieces combine into one bounded risk score.
 
 This document walks through that derivation and, at each step, says plainly whether the shipped
 code in [`backend/src/lib/readiness.ts`](../backend/src/lib/readiness.ts) and
@@ -155,18 +157,153 @@ The three stats the notes apply this to:
    athlete's own history — but sign-flipped relative to the general form, since a wellness *drop*
    should read as a positive (worse) z: `z = (μ − well_daily_recent) / σ`.
 3. **Load (ACWR)** — also z-scored, but by the notes' own account "a different method," since ACWR
-   has a built-in neutral point of 1.0 rather than a neutral point derived from the athlete's own
-   mean.
+   has a built-in neutral point of **1.0**, not one derived from the athlete's own mean:
+
+   ```
+   z_load = (ACWR − 1.0) / σ_ACWR
+   ```
+
+   ACWR = 1.0 means this week's load exactly equals what the athlete's body has adapted to, so
+   there's nothing to compute a personal μ from — the neutral point is fixed by definition, the
+   same way "0 degrees" doesn't need to be measured per person. z_load > 0 means recent load
+   exceeds adaptation; z_load < 0 means detraining. The notes are explicit about *why* it has to be
+   the fixed 1.0 rather than the athlete's own average ACWR: an athlete who has been chronically
+   over-ramped for months would have a personal average well above 1.0, and centering on that
+   average would make their ongoing overtraining look statistically normal — exactly the failure
+   mode standardizing-per-athlete is supposed to avoid for the other two stats.
+
+   `σ_ACWR` should, in principle, be measured from the standard deviation of weekly ACWR values
+   across the whole squad over a season, but the notes use a **provisional value of 0.18** for now
+   for lack of enough real data yet, citing published ACWR distributions in endurance athletes
+   clustering around 0.15–0.25. Worked examples: ACWR = 1.18 → z = (1.18 − 1.0) / 0.18 = **+1.0**;
+   ACWR = 1.42 → z = (1.42 − 1.0) / 0.18 = **+2.33** (flagged as real injury risk). Once real
+   injury/overreaching outcomes get recorded, the notes say this fixed `σ_ACWR` should be replaced
+   by fitting a logistic regression of actual injury outcomes against ACWR directly — the
+   hand-picked constant is explicitly a placeholder for a value data should eventually supply.
 
 **In code: not implemented.** There is no per-athlete mean/standard-deviation tracking, no z-score
 of any kind, and no "effort cost" / pace-based efficiency metric anywhere in the schema or scoring
 code — `TrainingLoad` stores `distanceMiles`, but nothing currently divides it into an
-efficiency figure. What the code does instead, in `computeScore` (§7), is compare each athlete's
+efficiency figure. What the code does instead, in `computeScore` (§10), is compare each athlete's
 recent wellness average against one **fixed constant baseline (4.2/5) shared by every athlete**,
-not a personalized mean/σ. The full z-score design across all three stats is the biggest gap
-between the notes and what's running today.
+not a personalized mean/σ, and turn ACWR into risk via a straight line (§5) rather than a
+z-score. The full z-score design across all three stats is the biggest gap between the notes and
+what's running today.
 
-## 7. The score that actually ships
+## 7. Combining the three z-scores into one composite
+
+Once `z_load`, `z_effortcost`, and `z_welldaily` all exist on the same standardized scale, the
+notes blend them into a single **composite risk score C** with a weighted sum:
+
+```
+C = (w_load × z_load) + (w_effortcost × z_effortcost) + (w_welldaily × z_welldaily)
+```
+
+Two constraints on the weights: every `w ≥ 0` (non-negativity, so a good signal on one stat can't
+numerically cancel out a bad signal on another), and `w_load + w_effortcost + w_welldaily = 1.0`
+(so `C` stays on the same standard-deviation-ish scale regardless of how the weight is split).
+Within those constraints, the notes reason about *relative* trust in each signal rather than
+treating them as equal:
+
+- **Wellness weighted least** (self-reported, and the easiest of the three for an athlete to
+  under- or over-state).
+- **Efficiency weighted second**, as a slightly more objective signal than self-report.
+- **Load weighted most**, since a spiking ACWR is the most direct driver of overuse injury — but
+  still capped under 0.5 so it alone can never dominate the verdict.
+
+Provisional weights: `w_load = 0.42`, `w_effortcost = 0.32`, `w_welldaily = 0.26`. Worked example
+using the z-scores from §6 (`z_load = +2.33`, `z_effortcost = +2.0`, `z_welldaily = +1.5`):
+
+```
+C = (0.42)(2.33) + (0.32)(2.0) + (0.26)(1.5) = 0.979 + 0.640 + 0.390 = 2.01
+```
+
+Like `σ_ACWR` above, these weights are called out as **provisional** — once real injury/overreaching
+outcomes exist, `C = Σ wᵢzᵢ` becomes the input to a logistic regression that *learns* the weights
+from who actually got hurt, rather than having them hand-picked.
+
+**In code: not implemented.** There's no composite score, no per-stat weighting, and (per §6) two
+of the three inputs it would blend don't exist yet either.
+
+## 8. From composite to a bounded 0–100 risk score
+
+`C` alone is an unbounded z-score-ish number, which the notes judge harder to read at a glance
+than a familiar 0–100 scale. The requirements they set for that conversion — bounded to `[0, 100]`,
+most *sensitive* to change in the middle (where borderline, actually-ambiguous athletes sit), and
+*flattening out* at the extremes (the numeric gap between "very bad" and "extremely bad" doesn't
+need its own resolution) — describe an S-shaped curve, so the notes reach for a **logistic
+function**:
+
+```
+R = 100 / (1 + e^(−k(C − C₀)))
+```
+
+where `R` is the risk score (0–100), `e` is Euler's number, `C₀` is the composite value that maps
+to the exact middle of the scale, and `k` controls how sharply `R` swings as `C` crosses `C₀`
+(bigger `k` = a sharper cliff right at `C₀`; smaller `k` = a gentler ramp). Provisional values:
+`C₀ = 0.35` (an athlete has to sit somewhat past a neutral composite before it becomes a 50/50 call
+to flag them) and `k = 1.15`. As with `σ_ACWR` and the composite weights, the notes expect a real
+model to later *learn* `k` and `C₀` from recorded outcomes rather than keep them hand-picked.
+
+Worked example, continuing `C = 2.01` from §7:
+
+```
+exponent = −1.15 × (2.01 − 0.35) = −1.15 × 1.66 = −1.909
+e^−1.909 ≈ 0.148
+R = 100 / (1 + 0.148) ≈ 87
+```
+
+The app is meant to display the inverse, **readiness = 100 − R** (so high readiness reads as good,
+matching "Fresh"), giving a readiness of 13 for this athlete.
+
+**In code: not implemented.** There's no logistic transform anywhere in the codebase — `computeScore`
+(§10) produces its 0–100 number directly from a linear formula, with no composite `C` or S-curve step
+in between.
+
+## 9. Status thresholds, and the guardrails around them
+
+With `R`/readiness on a 0–100 scale, the notes set three status bands (readiness = 100 − R):
+
+| `R` | Readiness | Status |
+|---|---|---|
+| R ≥ 70 | ≤ 30 | "Back off" (high risk) |
+| 45 ≤ R ≤ 70 | 30–55 | "Ease back" (watch) |
+| R ≤ 45 | ≥ 55 | "Fresh" (on track) |
+
+— with a note that the labels are for convenience only, since a readiness of 31 isn't meaningfully
+different from a readiness of 29; the underlying number is what matters, the band is just a
+human-readable bucket around it.
+
+Two guardrails sit on top of the score itself:
+
+- **Injured** athletes are excluded from the computation entirely, and their injured days are
+  removed from their own baseline window so μ/σ for their other stats aren't corrupted by the
+  injury — and days spent working back to full recovery don't get folded into their "normal"
+  either, so the future baseline stays clean once they're back.
+- **Return-to-run protocol** athletes don't get risk-flagged at all: slower paces are *expected*
+  during a return ramp, so the rising-effort-cost signal that would otherwise fire is a false
+  alarm by design, not a real one.
+
+Finally, the notes flag a cold-start requirement: an athlete needs **roughly 2–3 weeks of data**
+before they can be scored at all, since a μ/σ computed from less than that is close to meaningless
+— and baselines should **roll forward weekly** rather than freeze at day one, so an athlete's
+"normal" tracks real fitness changes over a season instead of staying anchored to how they looked
+in week 1.
+
+**In code:** the three-tier status idea and both guardrails are implemented, though with different
+specific numbers and without the cold-start gate. `bandForScore` in
+[`readiness.ts`](../backend/src/lib/readiness.ts) uses score thresholds of 65/40 rather than the
+notes' readiness thresholds of 55/30 (a different scale entirely, since the shipped score isn't
+`100 − R`, but structurally the same three tiers). The injured/return-to-run guardrails **are**
+implemented essentially as designed — `resolveStatus` overrides the score-driven band entirely
+whenever there's an active or recovering injury on file, which is exactly the "don't flag this
+runner at all" behavior the notes call for, just without the μ/σ-exclusion detail (moot, since
+there's no per-athlete μ/σ yet per §6). What's missing is the 2–3 week minimum-data requirement and
+the weekly-rolling baseline — the app currently scores an athlete from their very first check-in or
+run, with `wellnessAvg` defaulting to a neutral 3.5 only when there's *zero* data rather than
+holding off until there's *enough*.
+
+## 10. The score that actually ships
 
 Putting together what *is* implemented — the plain-average ACWR (§3) and the fixed-baseline
 wellness comparison — `computeScore` in [`readiness.ts`](../backend/src/lib/readiness.ts):
@@ -186,8 +323,8 @@ an active or recovering injury overrides the band entirely (`resolveStatus`) —
 [Readiness status](../README.md#readiness-status) table.
 
 This formula is a reasonable, shipped approximation of the notes' intent (combine load risk and
-wellness deviation into one number), but it is **not** the z-score-standardized, EWMA-smoothed
-model the notes actually derive. The gaps, summarized:
+wellness deviation into one number), but it is **not** the z-score-standardized, EWMA-smoothed,
+logistic-squashed model the notes actually derive end to end. The gaps, summarized:
 
 | Concept (from the notes) | Status in code |
 |---|---|
@@ -198,10 +335,21 @@ model the notes actually derive. The gaps, summarized:
 | Gabbett-style ACWR bands | ⚠️ partially — only the 0.8 floor is used, as a linear risk ramp |
 | Per-athlete z-scored effort cost / efficiency | ❌ not implemented — no such field exists |
 | Per-athlete z-scored wellness | ⚠️ simplified — compared to a fixed 4.2 baseline, not a personal μ/σ |
-| Per-athlete z-scored load (ACWR) | ❌ not implemented — ACWR feeds a linear formula instead |
+| Per-athlete z-scored load (ACWR, centered on 1.0) | ❌ not implemented — ACWR feeds a linear formula instead |
+| Weighted composite `C` of the 3 z-scores | ❌ not implemented — no composite score exists |
+| Logistic transform of `C` into a bounded 0–100 `R` | ❌ not implemented — `computeScore` is linear, not S-shaped |
+| Three status tiers from the final score | ✅ implemented (`bandForScore`), different thresholds/scale |
+| Injured / return-to-run guardrails override the score | ✅ implemented (`resolveStatus`) |
+| 2–3 week minimum data before scoring an athlete | ❌ not implemented — scores from the first check-in/run |
+| Weekly-rolling per-athlete baseline | ❌ not implemented — moot without per-athlete μ/σ yet |
 | Combine risk + wellness into one 0–100 score | ✅ implemented (`computeScore`), with the simplified inputs above |
 
-If the z-score/EWMA design gets built out, the natural place for it is inside `avgDailyLoad` (swap
-the plain mean for the recursive EWMA in §4) and a new per-athlete stats table to hold each
-metric's running μ/σ so `computeScore` can be rewritten in terms of z-scores instead of a fixed
-baseline.
+If the full design gets built out, the natural build order follows the notes' own structure: EWMA
+inside `avgDailyLoad` (§4) → a per-athlete stats table holding rolling μ/σ for effort-cost and
+wellness, refreshed weekly (§6, §9) → the three z-scores, including the fixed-1.0-centered
+`z_load` (§6) → the weighted composite `C` (§7) → the logistic transform into `R` (§8) → status
+bands and guardrails off of that `R` (§9) — replacing `computeScore`'s direct linear formula with
+the end of that pipeline instead.
+
+The notes close with their own one-page summary of this whole pipeline, goal to output, in
+`proofs/IMG_4428.jpg` — worth a look side by side with the section list above.
