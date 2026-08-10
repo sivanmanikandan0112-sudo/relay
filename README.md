@@ -129,7 +129,11 @@ any of that pipeline; before that it reads as a fixed neutral default rather tha
 too little history. The original handwritten derivation it's based on is scanned into
 [`proofs/`](proofs).
 
-Run `npm run test:backend` to run the math unit tests on their own.
+Run `npm run test:backend` to run the math unit tests on their own. To see every intermediate
+number the pipeline produces for a real seeded athlete (EWMA load, each z-score, the composite, the
+logistic risk score) rather than only the final stored score, run
+`npm run inspect -w backend -- "Maya Okonkwo"` (name or username both work) —
+[`backend/scripts/inspect-athlete.ts`](backend/scripts/inspect-athlete.ts).
 
 ### Coach's athlete detail view
 
@@ -215,6 +219,7 @@ fabricated per-week number — so it reflects the same math described in
 | `npm run build:frontend` | Build the SPA to `frontend/dist` |
 | `npm run lint` | Lint both workspaces |
 | `npm run test:backend` | Run the scoring-math unit tests (`backend/src/lib/math.test.ts`) |
+| `npm run inspect -w backend -- "<name or username>"` | Print one athlete's full readiness breakdown |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
 

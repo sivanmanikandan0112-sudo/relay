@@ -1,3 +1,4 @@
+import type { ReadinessStatus } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { plainSignal, resolveStatus } from "./readiness.js";
 import {
@@ -82,15 +83,46 @@ function isExcluded(date: Date, ranges: ExclusionRange[]): boolean {
 }
 
 /**
- * Recomputes an athlete's current-week readiness from their real submitted
- * data, running the full pipeline in docs/math-behind-relay.md: EWMA
- * acute/chronic load -> a z-score per stat (load, effort cost, wellness) ->
- * a weighted composite -> a logistic transform into a bounded risk score ->
- * a status band, with the injured/return-to-run guardrails applied on top.
- * Call this after any new wellness check-in or training log (add or
- * remove) so the Brief/Dashboard reflect it immediately.
+ * Every intermediate number the pipeline in docs/math-behind-relay.md
+ * produces on the way to a final score, not just the final score -- so it
+ * can be inspected (see scripts/inspect-athlete.ts) instead of only ever
+ * being visible as one collapsed 0-100 number in the database.
  */
-export async function recomputeReadiness(athleteId: string, now: Date = new Date()): Promise<void> {
+export interface ReadinessBreakdown {
+  athleteId: string;
+  athleteName: string;
+  now: Date;
+  daysOfHistory: number;
+  hasEnoughHistory: boolean;
+  acuteLoad: number;
+  chronicLoad: number;
+  acwr: number;
+  zLoad: number | null;
+  effortCostRecent: number | null;
+  effortCostBaselineSize: number;
+  zEffortCost: number | null;
+  wellDailyRecent: number | null;
+  wellDailyBaselineSize: number;
+  zWellDaily: number | null;
+  composite: number;
+  risk: number; // R, from the logistic transform
+  readiness: number; // 100 - R, unrounded
+  score: number; // readiness, rounded and clamped -- what actually gets stored
+  band: "FRESH" | "EASE_BACK" | "BACK_OFF";
+  status: ReadinessStatus;
+  summary: string;
+  activeInjury: boolean;
+  recoveringInjury: boolean;
+}
+
+/**
+ * Runs the full pipeline from docs/math-behind-relay.md against an
+ * athlete's real data and returns every intermediate value, without
+ * writing anything to the database. `recomputeReadiness` below is a thin
+ * wrapper that calls this and persists the result; scripts/inspect-athlete.ts
+ * calls this directly to print the breakdown for manual testing.
+ */
+export async function computeReadinessBreakdown(athleteId: string, now: Date = new Date()): Promise<ReadinessBreakdown> {
   const athlete = await prisma.athlete.findUniqueOrThrow({ where: { id: athleteId } });
 
   const loadLookbackStart = new Date(now.getTime() - LOAD_LOOKBACK_DAYS * 86400000);
@@ -173,11 +205,48 @@ export async function recomputeReadiness(athleteId: string, now: Date = new Date
   const status = resolveStatus(band, activeInjury, recoveringInjury);
   const summary = plainSignal(athlete.name, status, recentWellDaily ?? 3.5);
 
+  return {
+    athleteId,
+    athleteName: athlete.name,
+    now,
+    daysOfHistory,
+    hasEnoughHistory,
+    acuteLoad,
+    chronicLoad,
+    acwr: acwrValue,
+    zLoad: zLoadValue,
+    effortCostRecent: recentEffortCost,
+    effortCostBaselineSize: effortCostBaseline.length,
+    zEffortCost: zEffortCostValue,
+    wellDailyRecent: recentWellDaily,
+    wellDailyBaselineSize: wellDailyBaseline.length,
+    zWellDaily: zWellDailyValue,
+    composite: C,
+    risk: R,
+    readiness,
+    score,
+    band,
+    status,
+    summary,
+    activeInjury,
+    recoveringInjury,
+  };
+}
+
+/**
+ * Recomputes an athlete's current-week readiness from their real submitted
+ * data and upserts the ReadinessScore row for this week. Call this after
+ * any new wellness check-in or training log (add or remove) so the
+ * Brief/Dashboard reflect it immediately. See computeReadinessBreakdown
+ * above for the actual pipeline; this just persists its result.
+ */
+export async function recomputeReadiness(athleteId: string, now: Date = new Date()): Promise<void> {
+  const b = await computeReadinessBreakdown(athleteId, now);
   const { week, year } = currentIsoWeek(now);
 
   await prisma.readinessScore.upsert({
     where: { athleteId_week_year: { athleteId, week, year } },
-    update: { score, status, summary },
-    create: { athleteId, week, year, score, status, summary },
+    update: { score: b.score, status: b.status, summary: b.summary },
+    create: { athleteId, week, year, score: b.score, status: b.status, summary: b.summary },
   });
 }
