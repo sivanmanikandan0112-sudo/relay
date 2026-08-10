@@ -17,19 +17,10 @@ export const STATUS_COLOR: Record<ReadinessStatus, string> = {
 };
 
 /**
- * Score-driven band from a 0-100 readiness score. Only meaningful when the
- * athlete isn't currently overridden by an injury (see resolveStatus).
- */
-export function bandForScore(score: number): "FRESH" | "EASE_BACK" | "BACK_OFF" {
-  if (score < 40) return "BACK_OFF";
-  if (score < 65) return "EASE_BACK";
-  return "FRESH";
-}
-
-/**
  * An active injury always wins, then a recovering one — an athlete on
  * return-to-run protocol runs slower on purpose, so the load-based score
- * would otherwise wrongly flag them.
+ * would otherwise wrongly flag them. `scoreBand` should come from
+ * `bandForReadiness` in `math.ts` — see docs/math-behind-relay.md §9.
  */
 export function resolveStatus(
   scoreBand: "FRESH" | "EASE_BACK" | "BACK_OFF",
@@ -39,24 +30,6 @@ export function resolveStatus(
   if (activeInjury) return "INJURED";
   if (recoveringInjury) return "RETURN_PROTOCOL";
   return scoreBand;
-}
-
-/**
- * Acute:chronic workload ratio -> a 0-100 risk figure. ~1.0 is a neutral
- * ratio (this week matches the last month); the further above that, the
- * more load has outpaced what the athlete is adapted to.
- */
-export function riskFromAcwr(acwr: number): number {
-  return Math.max(0, Math.min(100, Math.round((acwr - 0.8) * 100)));
-}
-
-/**
- * Combines load risk with how far off the athlete's recent wellness
- * check-ins are from a "normal" 4.2/5 baseline into one 0-100 score.
- * Mirrors the reference design's formula exactly.
- */
-export function computeScore(risk: number, wellnessAvg: number): number {
-  return Math.max(6, Math.min(97, Math.round(100 - risk * 0.72 - (4.2 - wellnessAvg) * 7)));
 }
 
 /**

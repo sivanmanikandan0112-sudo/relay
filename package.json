@@ -11,7 +11,8 @@
     "dev:frontend": "npm run dev -w frontend",
     "build:backend": "npm run build -w backend",
     "build:frontend": "npm run build -w frontend",
-    "lint": "npm run lint -w backend && npm run lint -w frontend"
+    "lint": "npm run lint -w backend && npm run lint -w frontend",
+    "test:backend": "npm run test -w backend"
   },
   "engines": {
     "node": ">=20"

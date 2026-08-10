@@ -29,7 +29,8 @@ relay/
 │       ├── routes/     REST endpoints (auth, me, squads, athletes, brief,
 │       │               notes, injuries, wellness, training-load, invites)
 │       ├── middleware/
-│       ├── lib/         authz.ts (roster-based access control), scoring.ts, readiness.ts
+│       ├── lib/         authz.ts (roster-based access control), scoring.ts, readiness.ts,
+│       │               math.ts (the scoring formulas, unit-tested in math.test.ts)
 │       └── index.ts
 ├── frontend/           React SPA
 │   └── src/
@@ -96,8 +97,8 @@ directly and the UI shows a "continue to reset" link built from it instead of em
   duration). Same self-only rule as check-ins, and same multiple-per-day allowance (split
   workouts, two-a-days). The athlete confirms a summary of the run before it's saved.
 - **ReadinessScore** — a weekly snapshot: score (0–100) + status. Recomputed automatically
-  whenever an athlete submits a check-in, logs a run, or their injury status changes — see
-  [`lib/scoring.ts`](backend/src/lib/scoring.ts).
+  whenever an athlete submits a check-in, logs a run, deletes a run, or their injury status
+  changes — see [`lib/scoring.ts`](backend/src/lib/scoring.ts).
 - **Injury** — tracked per athlete with status (`ACTIVE` / `RECOVERING` / `RESOLVED`)
 - **Note** — a coach's check-in note left on an athlete
 
@@ -107,21 +108,26 @@ Status is score-driven, except an injury always overrides it:
 
 | Status | Meaning | Trigger |
 |---|---|---|
-| `FRESH` | Steady, no action needed | score ≥ 65 |
-| `EASE_BACK` | Load creeping up, worth watching | 40 ≤ score < 65 |
-| `BACK_OFF` | Worth a real check-in this week | score < 40 |
+| `FRESH` | Steady, no action needed | score > 55 |
+| `EASE_BACK` | Load creeping up, worth watching | 30 < score ≤ 55 |
+| `BACK_OFF` | Worth a real check-in this week | score ≤ 30 |
 | `RETURN_PROTOCOL` | On return-to-run protocol | active `RECOVERING` injury |
 | `INJURED` | Out, held out of load tracking | active `ACTIVE` injury |
 
-The score itself combines an acute:chronic training-load ratio (the last 7 days of logged runs vs.
-the last 28) with how far recent wellness check-ins sit below a normal baseline — see
-[`lib/readiness.ts`](backend/src/lib/readiness.ts) for the exact formula and the plain-language
-message generator behind each Brief card.
+The score is the real pipeline derived in [`docs/math-behind-relay.md`](docs/math-behind-relay.md),
+implemented end to end in [`lib/math.ts`](backend/src/lib/math.ts) (pure, unit-tested formulas —
+see [`lib/math.test.ts`](backend/src/lib/math.test.ts), each test checked against the notes' own
+worked examples) and wired up by [`lib/scoring.ts`](backend/src/lib/scoring.ts): an EWMA-smoothed
+acute:chronic load ratio, a per-athlete z-score each for load, run efficiency, and wellness, a
+weighted composite of the three, and a logistic transform into a bounded 0–100 risk score. It
+recomputes automatically — and immediately — whenever an athlete submits a check-in, logs a run, or
+deletes a run (`recomputeReadiness`, called from the wellness/training-load routes), or their
+injury status changes. An athlete needs about two weeks of data on file before the score reflects
+any of that pipeline; before that it reads as a fixed neutral default rather than a guess built on
+too little history. The original handwritten derivation it's based on is scanned into
+[`proofs/`](proofs).
 
-For where those numbers actually come from — session load, the acute:chronic ratio, and the
-statistical model behind them, cross-referenced against what's really implemented versus what's
-still on paper — see [`docs/math-behind-relay.md`](docs/math-behind-relay.md). The original
-handwritten derivation it's based on is scanned into [`proofs/`](proofs).
+Run `npm run test:backend` to run the math unit tests on their own.
 
 ### Coach's athlete detail view
 
@@ -204,6 +210,7 @@ fabricated per-week number — so it reflects the same math described in
 | `npm run build:backend` | Compile the API to `backend/dist` |
 | `npm run build:frontend` | Build the SPA to `frontend/dist` |
 | `npm run lint` | Lint both workspaces |
+| `npm run test:backend` | Run the scoring-math unit tests (`backend/src/lib/math.test.ts`) |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
 
