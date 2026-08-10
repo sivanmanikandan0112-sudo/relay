@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import { STATUS_COLOR } from "../src/lib/readiness.js";
 import { recomputeReadiness } from "../src/lib/scoring.js";
 
@@ -306,11 +307,36 @@ async function main() {
 
   // --- Sample invites for Jordan Rivera, so the Invite screen has data on first load ---
   const jordanId = coachByUsername.get("jordan.rivera")!;
+  const inviteToken = () => crypto.randomBytes(24).toString("hex");
+  const inviteExpiresAt = daysAgo(-14); // 14 days from now
   await prisma.invite.createMany({
     data: [
-      { email: "taylor.nguyen@ridgeline.edu", status: "PENDING", invitedById: jordanId },
-      { email: "morgan.diaz@ridgeline.edu", status: "ACCEPTED", invitedById: jordanId, respondedAt: daysAgo(2) },
-      { email: "casey.kim@ridgeline.edu", status: "REJECTED", invitedById: jordanId, respondedAt: daysAgo(1) },
+      {
+        email: "taylor.nguyen@ridgeline.edu",
+        status: "PENDING",
+        invitedById: jordanId,
+        squadId: girls.id,
+        token: inviteToken(),
+        expiresAt: inviteExpiresAt,
+      },
+      {
+        email: "morgan.diaz@ridgeline.edu",
+        status: "ACCEPTED",
+        invitedById: jordanId,
+        squadId: girls.id,
+        token: inviteToken(),
+        expiresAt: inviteExpiresAt,
+        respondedAt: daysAgo(2),
+      },
+      {
+        email: "casey.kim@ridgeline.edu",
+        status: "REJECTED",
+        invitedById: jordanId,
+        squadId: boys.id,
+        token: inviteToken(),
+        expiresAt: inviteExpiresAt,
+        respondedAt: daysAgo(1),
+      },
     ],
   });
 

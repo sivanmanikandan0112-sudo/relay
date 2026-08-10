@@ -4,6 +4,7 @@ import { api, type AuthUser } from "../lib/api";
 interface AuthContextValue {
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<AuthUser>;
+  setSession: (token: string, user: AuthUser) => void;
   logout: () => void;
   updateUser: (patch: Partial<AuthUser>) => void;
 }
@@ -16,11 +17,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   });
 
-  async function login(username: string, password: string) {
-    const { token, user } = await api.login(username, password);
+  // Shared by login() and by any other flow that ends with a real
+  // token + user in hand without going through POST /auth/login itself
+  // (e.g. AcceptInvite, which creates the account and logs it in as one step).
+  function setSession(token: string, user: AuthUser) {
     localStorage.setItem("relay_token", token);
     localStorage.setItem("relay_user", JSON.stringify(user));
     setUser(user);
+  }
+
+  async function login(username: string, password: string) {
+    const { token, user } = await api.login(username, password);
+    setSession(token, user);
     return user;
   }
 
@@ -41,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  return <AuthContext.Provider value={{ user, login, logout, updateUser }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, login, setSession, logout, updateUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

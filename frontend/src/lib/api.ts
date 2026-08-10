@@ -66,13 +66,23 @@ export const api = {
   deleteRun: (id: string) => request<void>(`/training-load/${id}`, { method: "DELETE" }),
 
   invites: () => request<Invite[]>("/invites"),
-  bulkInvite: (emails: string[]) =>
+  bulkInvite: (emails: string[], squadId: string) =>
     request<{ created: number; skipped: number; invites: Invite[] }>("/invites/bulk", {
       method: "POST",
-      body: JSON.stringify({ emails }),
+      body: JSON.stringify({ emails, squadId }),
     }),
   setInviteStatus: (id: string, status: Invite["status"]) =>
     request<Invite>(`/invites/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Public, unauthenticated -- the real half of the invite flow: an
+  // invited athlete follows the link built from their invite's token to
+  // look up who invited them, then create their own account.
+  inviteDetails: (token: string) => request<InviteDetails>(`/invite-accept/${token}`),
+  acceptInvite: (token: string, input: AcceptInviteInput) =>
+    request<{ token: string; user: AuthUser }>(`/invite-accept/${token}`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };
 
 export type Gender = "FEMALE" | "MALE" | "NONBINARY" | "PREFER_NOT_TO_SAY";
@@ -173,6 +183,22 @@ export interface Invite {
   id: string;
   email: string;
   status: "PENDING" | "ACCEPTED" | "REJECTED";
+  squadId: string | null;
+  token: string;
+  expiresAt: string;
   createdAt: string;
   respondedAt: string | null;
+}
+
+export interface InviteDetails {
+  email: string;
+  squadName: "GIRLS" | "BOYS" | null;
+  coachName: string;
+}
+
+export interface AcceptInviteInput {
+  username: string;
+  password: string;
+  firstName: string;
+  lastName: string;
 }

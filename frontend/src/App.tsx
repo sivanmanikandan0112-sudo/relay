@@ -11,6 +11,7 @@ import { AthleteHowItWorks } from "./pages/AthleteHowItWorks";
 import { Login } from "./pages/Login";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ResetPassword } from "./pages/ResetPassword";
+import { AcceptInvite } from "./pages/AcceptInvite";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -38,6 +39,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/accept-invite/:token" element={<AcceptInvite />} />
       <Route
         element={
           <RequireAuth>

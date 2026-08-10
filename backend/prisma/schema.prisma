@@ -78,14 +78,22 @@ model CoachAthlete {
 }
 
 // A coach's bulk-invited email addresses. No real email delivery is wired
-// up (this dev environment has no email provider configured) — accept/
-// reject exist so the status can be exercised/tested without one.
+// up (this dev environment has no email provider configured), so the
+// coach copies/shares the accept link (built from `token`) directly --
+// see routes/inviteAccept.ts, the public, unauthenticated flow an invited
+// athlete uses to actually create their account. `PATCH /api/invites/:id`
+// separately lets a coach flip the status by hand, for demoing the UI
+// without a real signup.
 model Invite {
   id          String       @id @default(cuid())
   email       String
   status      InviteStatus @default(PENDING)
   invitedBy   User         @relation(fields: [invitedById], references: [id])
   invitedById String
+  squad       Squad?       @relation(fields: [squadId], references: [id])
+  squadId     String? // which roster the accepted athlete joins; null on old pre-signup-flow invites
+  token       String       @unique
+  expiresAt   DateTime
   createdAt   DateTime     @default(now())
   respondedAt DateTime?
 
@@ -108,6 +116,7 @@ model Squad {
   id       String    @id @default(cuid())
   name     SquadName @unique
   athletes Athlete[]
+  invites  Invite[]
 }
 
 model Athlete {

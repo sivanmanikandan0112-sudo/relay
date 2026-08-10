@@ -36,14 +36,15 @@ relay/
 │       ├── app.ts       The Express app (routes/middleware), importable with no side effects
 │       ├── index.ts     Thin entrypoint: imports app.ts and calls .listen()
 │       ├── routes/     REST endpoints (auth, me, squads, athletes, brief,
-│       │               notes, injuries, wellness, training-load, invites)
+│       │               notes, injuries, wellness, training-load, invites,
+│       │               inviteAccept -- public, real account creation)
 │       ├── middleware/
 │       └── lib/         authz.ts (roster-based access control), scoring.ts, readiness.ts,
 │                       math.ts (the scoring formulas, unit-tested alongside readiness.ts)
 ├── frontend/           React SPA
 │   └── src/
 │       ├── pages/       Brief, Dashboard, Injuries, CoachInvites, How It Works,
-│       │                Login, ForgotPassword, ResetPassword,
+│       │                Login, ForgotPassword, ResetPassword, AcceptInvite,
 │       │                AthleteCheckin, AthleteRuns, AthleteHowItWorks
 │       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, MatchingSection
 │       ├── context/      AuthContext
@@ -78,12 +79,20 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
   `DELETE FROM "CoachAthlete" WHERE "athleteId" = (SELECT id FROM "Athlete" WHERE name = 'Ava Thompson');`
   — then sign in as them.
 
-### Bulk athlete invites
+### Bulk athlete invites — real signups, no email provider
 
-Coaches can bulk-invite athletes by email from the **Invite** tab. This dev environment has no
-email provider configured, so invites are tracked (`Invite` model, status `PENDING` /
-`ACCEPTED` / `REJECTED`) but not actually delivered — the Invite screen has "simulate
-accept/reject" buttons standing in for the athlete's response until a real email flow exists.
+Coaches bulk-invite athletes to a specific squad by email from the **Invite** tab. Accepting an
+invite is a **real account-creation flow**, not simulated: each invite gets a unique, 14-day
+token (`Invite.token`/`expiresAt`); an invited athlete follows the link built from it —
+`/accept-invite/:token`, public, no login required — to a page that shows who invited them and
+lets them pick their own username/password. Submitting it creates a real `User` + `Athlete` row,
+adds them to the inviting coach's roster in the invited squad, marks the invite `ACCEPTED`, and
+logs them straight in (same response shape as `/api/auth/login`) — see
+[`routes/inviteAccept.ts`](backend/src/routes/inviteAccept.ts). This dev environment has no email
+provider configured, so nothing is actually emailed — the Invite screen has a **"copy invite
+link"** button so a coach can share it directly (text, whatever). The old "simulate accept/reject"
+buttons are still there too, for flipping an invite's status by hand to demo the UI without a real
+person completing signup.
 
 ### Forgot password
 
@@ -97,7 +106,8 @@ directly and the UI shows a "continue to reset" link built from it instead of em
 - **Athlete** — belongs to a squad; optionally linked to a `User` for athlete login; `gender`
   (`FEMALE` / `MALE` / `NONBINARY` / `PREFER_NOT_TO_SAY`), required at login if unset
 - **CoachAthlete** — many-to-many roster assignment between coach `User`s and `Athlete`s
-- **Invite** — a coach's bulk-invited email + status
+- **Invite** — a coach's bulk-invited email + status + target squad + a unique accept token/expiry;
+  accepting one for real (`/accept-invite/:token`) creates the `User`/`Athlete`/`CoachAthlete` rows
 - **PasswordResetToken** — simulated forgot-password flow
 - **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus
   an optional note. An athlete can only ever write their own (the athlete ID comes from the JWT,
@@ -279,15 +289,18 @@ The integration and e2e tiers both run against a real `relay_test` Postgres data
 
 ## REST API
 
-All routes are under `/api`. Aside from `/api/auth/*` and `/api/health`, every route requires an
-`Authorization: Bearer <token>` header, and coach-scoped routes further filter to that coach's own
-`CoachAthlete` roster (a coach requesting an athlete not on their roster gets a 403).
+All routes are under `/api`. Aside from `/api/auth/*`, `/api/invite-accept/*`, and `/api/health`,
+every route requires an `Authorization: Bearer <token>` header, and coach-scoped routes further
+filter to that coach's own `CoachAthlete` roster (a coach requesting an athlete not on their
+roster gets a 403).
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Log in with username + password, returns a JWT |
 | POST | `/api/auth/forgot-password` | Simulated reset-token issuance (no email provider) |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
+| GET | `/api/invite-accept/:token` | Public: look up who invited you (no auth) |
+| POST | `/api/invite-accept/:token` | Public: create your account and log in (no auth) |
 | GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach if an athlete) |
 | PATCH | `/api/me/gender` | Set your gender (athlete only — required before anything else works) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
@@ -305,6 +318,6 @@ All routes are under `/api`. Aside from `/api/auth/*` and `/api/health`, every r
 | POST | `/api/training-load` | Log a run for yourself (athlete only; recomputes readiness) |
 | GET | `/api/training-load/athlete/:athleteId` | Run history |
 | DELETE | `/api/training-load/:id` | Delete your own logged run (athlete only) |
-| GET | `/api/invites` | Coach's sent invites |
-| POST | `/api/invites/bulk` | Bulk-create invites from a list of emails (coach only) |
-| PATCH | `/api/invites/:id` | Set an invite's status (coach only; simulates the athlete's response) |
+| GET | `/api/invites` | Coach's sent invites, including each one's accept token |
+| POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
+| PATCH | `/api/invites/:id` | Manually set an invite's status (coach only; demo/testing, not real acceptance) |

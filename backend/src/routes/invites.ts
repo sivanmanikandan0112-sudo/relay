@@ -1,9 +1,12 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 
 export const invitesRouter = Router();
+
+const INVITE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 invitesRouter.use(requireAuth, requireRole("COACH"));
 
@@ -17,6 +20,7 @@ invitesRouter.get("/", async (req, res) => {
 
 const bulkSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(100),
+  squadId: z.string().min(1),
 });
 
 invitesRouter.post("/bulk", async (req, res) => {
@@ -25,6 +29,10 @@ invitesRouter.post("/bulk", async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const coachId = req.user!.sub;
+  const { squadId } = parsed.data;
+  const squad = await prisma.squad.findUnique({ where: { id: squadId } });
+  if (!squad) return res.status(400).json({ error: "Unknown squad" });
+
   const emails = [...new Set(parsed.data.emails.map((e) => e.trim().toLowerCase()))];
 
   // Skip an email if this coach already has a pending or accepted invite
@@ -37,8 +45,15 @@ invitesRouter.post("/bulk", async (req, res) => {
   const toCreate = emails.filter((e) => !skip.has(e));
 
   if (toCreate.length > 0) {
+    const expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
     await prisma.invite.createMany({
-      data: toCreate.map((email) => ({ email, invitedById: coachId })),
+      data: toCreate.map((email) => ({
+        email,
+        invitedById: coachId,
+        squadId,
+        token: crypto.randomBytes(24).toString("hex"),
+        expiresAt,
+      })),
     });
   }
 
