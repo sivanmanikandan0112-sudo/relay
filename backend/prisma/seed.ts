@@ -33,20 +33,17 @@ const ROSTER: AthleteSeed[] = [
   { first: "Diego", last: "Alvarez", squad: "BOYS", archetype: "fresh" },
 ];
 
-const COACHES = [
-  { first: "Jordan", last: "Rivera" },
-  { first: "Sam", last: "Bennett" },
-];
+const COACHES = [{ first: "Jordan", last: "Rivera" }];
 
-// Coach roster assignments, by athlete username. "lily.anderson" is on
-// both, to demonstrate an athlete having more than one coach at once.
-// Every athlete is assigned to a coach -- including the injured/return
+// Coach roster assignments, by athlete username. A single coach, with
+// every athlete on their roster -- including the injured/return
 // archetypes, so their guardrail behavior (status override + the injury
 // exclusion in the baseline) is reachable through the coach UI, not just
-// the database.
+// the database. CoachAthlete is still a many-to-many join table (an
+// athlete could have more than one coach), this seed just doesn't
+// exercise that case with only one coach seeded.
 const ROSTER_ASSIGNMENTS: Record<string, string[]> = {
-  "jordan.rivera": ["maya.okonkwo", "sofia.reyes", "lily.anderson", "ava.thompson", "chloe.bennett", "emma.whitfield"],
-  "sam.bennett": ["ethan.brooks", "marcus.webb", "lily.anderson", "jonah.pruitt", "diego.alvarez"],
+  "jordan.rivera": ROSTER.map((a) => `${a.first}.${a.last}`.toLowerCase()),
 };
 
 // Weekly mileage totals per archetype, index 0 = this week (most recent)

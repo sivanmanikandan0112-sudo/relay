@@ -173,26 +173,27 @@ The seed script prints every username on completion. Every account uses the same
 
 **Password:** `Relay2026!`
 
-| Username | Name | Role | Squad | Archetype | Coach(es) |
-|---|---|---|---|---|---|
-| `jordan.rivera` | Jordan Rivera | Coach | — | — | — |
-| `sam.bennett` | Sam Bennett | Coach | — | — | — |
-| `maya.okonkwo` | Maya Okonkwo | Athlete | Girls | risk | Jordan |
-| `sofia.reyes` | Sofia Reyes | Athlete | Girls | risk | Jordan |
-| `ava.thompson` | Ava Thompson | Athlete | Girls | watch | Jordan |
-| `lily.anderson` | Lily Anderson | Athlete | Girls | watch | Jordan + Sam |
-| `chloe.bennett` | Chloe Bennett | Athlete | Girls | injured | Jordan |
-| `emma.whitfield` | Emma Whitfield | Athlete | Girls | return | Jordan |
-| `jonah.pruitt` | Jonah Pruitt | Athlete | Boys | risk | Sam |
-| `ethan.brooks` | Ethan Brooks | Athlete | Boys | watch | Sam |
-| `marcus.webb` | Marcus Webb | Athlete | Boys | fresh | Sam |
-| `diego.alvarez` | Diego Alvarez | Athlete | Boys | fresh | Sam |
+| Username | Name | Role | Squad | Archetype |
+|---|---|---|---|---|
+| `jordan.rivera` | Jordan Rivera | Coach | — | — |
+| `maya.okonkwo` | Maya Okonkwo | Athlete | Girls | risk |
+| `sofia.reyes` | Sofia Reyes | Athlete | Girls | risk |
+| `ava.thompson` | Ava Thompson | Athlete | Girls | watch |
+| `lily.anderson` | Lily Anderson | Athlete | Girls | watch |
+| `chloe.bennett` | Chloe Bennett | Athlete | Girls | injured |
+| `emma.whitfield` | Emma Whitfield | Athlete | Girls | return |
+| `jonah.pruitt` | Jonah Pruitt | Athlete | Boys | risk |
+| `ethan.brooks` | Ethan Brooks | Athlete | Boys | watch |
+| `marcus.webb` | Marcus Webb | Athlete | Boys | fresh |
+| `diego.alvarez` | Diego Alvarez | Athlete | Boys | fresh |
 
-`lily.anderson` is deliberately on both coaches' rosters, to demonstrate the many-to-many
-relationship. Every other athlete has exactly one coach — Jordan's roster leans toward the
-`risk`/`injured`/`return` archetypes (so the injury and return-to-run guardrails in
+Jordan is the only seeded coach, with all 10 athletes on his roster — including Chloe (injured)
+and Emma (return-to-run), so the injury and return-to-run guardrails in
 [`lib/scoring.ts`](backend/src/lib/scoring.ts) are reachable straight from his Brief/Injuries
-tabs), Sam's toward `fresh`/`watch`.
+tabs. `CoachAthlete` is still a many-to-many join table in the schema (an athlete can have more
+than one coach at once) — the seed just doesn't currently create a second coach to demonstrate
+that with. Add one via `prisma.user.create({ ..., role: "COACH" })` and a matching `CoachAthlete`
+row if you need to exercise that case.
 
 Every athlete is seeded with **8 weeks of check-ins and logged runs** (`backend/prisma/seed.ts`),
 with day-to-day and week-to-week variety instead of one flat repeated number, following one of
