@@ -40,9 +40,13 @@ const COACHES = [
 
 // Coach roster assignments, by athlete username. "lily.anderson" is on
 // both, to demonstrate an athlete having more than one coach at once.
+// Every athlete is assigned to a coach -- including the injured/return
+// archetypes, so their guardrail behavior (status override + the injury
+// exclusion in the baseline) is reachable through the coach UI, not just
+// the database.
 const ROSTER_ASSIGNMENTS: Record<string, string[]> = {
-  "jordan.rivera": ["maya.okonkwo", "sofia.reyes", "lily.anderson"],
-  "sam.bennett": ["ethan.brooks", "marcus.webb", "lily.anderson"],
+  "jordan.rivera": ["maya.okonkwo", "sofia.reyes", "lily.anderson", "ava.thompson", "chloe.bennett", "emma.whitfield"],
+  "sam.bennett": ["ethan.brooks", "marcus.webb", "lily.anderson", "jonah.pruitt", "diego.alvarez"],
 };
 
 // Weekly mileage totals per archetype, index 0 = this week (most recent)

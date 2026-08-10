@@ -64,9 +64,11 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
   (`PATCH /api/me/gender`). Seeded athletes deliberately start with no gender set, so any athlete
   login demonstrates this.
 - **Coach-required gating**: an athlete not yet on *any* coach's roster (`hasCoach: false`) sees no
-  Check-in / My Runs / How it works tabs at all — just a "waiting on a coach" notice. Five of the
-  ten seeded athletes are intentionally left unassigned so this is easy to demo (e.g. sign in as
-  `ava.thompson`).
+  Check-in / My Runs / How it works tabs at all — just a "waiting on a coach" notice. Every seeded
+  athlete is now assigned to a coach (see [Seeded logins](#seeded-logins)) so the app is fully
+  interactive out of the box; to see this gate itself, unassign an athlete — e.g.
+  `DELETE FROM "CoachAthlete" WHERE "athleteId" = (SELECT id FROM "Athlete" WHERE name = 'Ava Thompson');`
+  — then sign in as them.
 
 ### Bulk athlete invites
 
@@ -171,25 +173,26 @@ The seed script prints every username on completion. Every account uses the same
 
 **Password:** `Relay2026!`
 
-| Username | Name | Role | Squad | Roster |
-|---|---|---|---|---|
-| `jordan.rivera` | Jordan Rivera | Coach | — | maya.okonkwo, sofia.reyes, lily.anderson |
-| `sam.bennett` | Sam Bennett | Coach | — | ethan.brooks, marcus.webb, lily.anderson |
-| `maya.okonkwo` | Maya Okonkwo | Athlete | Girls | — |
-| `sofia.reyes` | Sofia Reyes | Athlete | Girls | — |
-| `ava.thompson` | Ava Thompson | Athlete | Girls | — |
-| `lily.anderson` | Lily Anderson | Athlete | Girls | — |
-| `chloe.bennett` | Chloe Bennett | Athlete | Girls | — |
-| `emma.whitfield` | Emma Whitfield | Athlete | Girls | — |
-| `jonah.pruitt` | Jonah Pruitt | Athlete | Boys | — |
-| `ethan.brooks` | Ethan Brooks | Athlete | Boys | — |
-| `marcus.webb` | Marcus Webb | Athlete | Boys | — |
-| `diego.alvarez` | Diego Alvarez | Athlete | Boys | — |
+| Username | Name | Role | Squad | Archetype | Coach(es) |
+|---|---|---|---|---|---|
+| `jordan.rivera` | Jordan Rivera | Coach | — | — | — |
+| `sam.bennett` | Sam Bennett | Coach | — | — | — |
+| `maya.okonkwo` | Maya Okonkwo | Athlete | Girls | risk | Jordan |
+| `sofia.reyes` | Sofia Reyes | Athlete | Girls | risk | Jordan |
+| `ava.thompson` | Ava Thompson | Athlete | Girls | watch | Jordan |
+| `lily.anderson` | Lily Anderson | Athlete | Girls | watch | Jordan + Sam |
+| `chloe.bennett` | Chloe Bennett | Athlete | Girls | injured | Jordan |
+| `emma.whitfield` | Emma Whitfield | Athlete | Girls | return | Jordan |
+| `jonah.pruitt` | Jonah Pruitt | Athlete | Boys | risk | Sam |
+| `ethan.brooks` | Ethan Brooks | Athlete | Boys | watch | Sam |
+| `marcus.webb` | Marcus Webb | Athlete | Boys | fresh | Sam |
+| `diego.alvarez` | Diego Alvarez | Athlete | Boys | fresh | Sam |
 
 `lily.anderson` is deliberately on both coaches' rosters, to demonstrate the many-to-many
-relationship. The other 5 athletes (Ava, Chloe, Emma, Jonah, Diego) exist with full readiness/
-wellness/training history but aren't assigned to a coach — sign in as either coach and their
-roster stays scoped to just their 3.
+relationship. Every other athlete has exactly one coach — Jordan's roster leans toward the
+`risk`/`injured`/`return` archetypes (so the injury and return-to-run guardrails in
+[`lib/scoring.ts`](backend/src/lib/scoring.ts) are reachable straight from his Brief/Injuries
+tabs), Sam's toward `fresh`/`watch`.
 
 Every athlete is seeded with **8 weeks of check-ins and logged runs** (`backend/prisma/seed.ts`),
 with day-to-day and week-to-week variety instead of one flat repeated number, following one of
