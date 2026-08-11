@@ -52,6 +52,70 @@ describe("POST /api/invites/bulk", () => {
   });
 });
 
+describe("DELETE /api/invites/:id", () => {
+  it("a coach can remove their own pending invite, and its token stops working", async () => {
+    await createCoach({ username: "coach.remove", firstName: "Coach", lastName: "Remove" });
+    const token = await loginAs("coach.remove");
+    const squad = await ensureSquad("GIRLS");
+    const invite = await sendInvite(token, "unwanted@example.com", squad.id);
+
+    const del = await request(app).delete(`/api/invites/${invite.id}`).set("Authorization", `Bearer ${token}`);
+    expect(del.status).toBe(204);
+
+    expect(await prisma.invite.findUnique({ where: { id: invite.id } })).toBeNull();
+    const lookup = await request(app).get(`/api/invite-accept/${invite.token}`);
+    expect(lookup.status).toBe(404);
+  });
+
+  it("removing it frees the email to be re-invited", async () => {
+    await createCoach({ username: "coach.reinvite", firstName: "Coach", lastName: "Reinvite" });
+    const token = await loginAs("coach.reinvite");
+    const squad = await ensureSquad("GIRLS");
+    const first = await sendInvite(token, "reinvite@example.com", squad.id);
+    await request(app).delete(`/api/invites/${first.id}`).set("Authorization", `Bearer ${token}`);
+
+    const second = await sendInvite(token, "reinvite@example.com", squad.id);
+    expect(second).toBeTruthy();
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("404s for another coach's invite", async () => {
+    await createCoach({ username: "coach.owner", firstName: "Coach", lastName: "Owner" });
+    const ownerToken = await loginAs("coach.owner");
+    await createCoach({ username: "coach.intruder", firstName: "Coach", lastName: "Intruder" });
+    const intruderToken = await loginAs("coach.intruder");
+    const squad = await ensureSquad("GIRLS");
+    const invite = await sendInvite(ownerToken, "notyours@example.com", squad.id);
+
+    const res = await request(app)
+      .delete(`/api/invites/${invite.id}`)
+      .set("Authorization", `Bearer ${intruderToken}`);
+    expect(res.status).toBe(404);
+    expect(await prisma.invite.findUnique({ where: { id: invite.id } })).not.toBeNull();
+  });
+
+  it("404s for a nonexistent invite id", async () => {
+    await createCoach({ username: "coach.nowhere", firstName: "Coach", lastName: "Nowhere" });
+    const token = await loginAs("coach.nowhere");
+    const res = await request(app).delete("/api/invites/not-a-real-id").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses to remove an already-accepted invite", async () => {
+    await createCoach({ username: "coach.late", firstName: "Coach", lastName: "Late" });
+    const token = await loginAs("coach.late");
+    const squad = await ensureSquad("BOYS");
+    const invite = await sendInvite(token, "alreadyjoined@example.com", squad.id);
+    await request(app)
+      .post(`/api/invite-accept/${invite.token}`)
+      .send({ username: "already.joined", password: "RealPassword123!", firstName: "Already", lastName: "Joined" });
+
+    const res = await request(app).delete(`/api/invites/${invite.id}`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+    expect(await prisma.invite.findUnique({ where: { id: invite.id } })).not.toBeNull();
+  });
+});
+
 describe("GET /api/invite-accept/:token", () => {
   it("returns the inviting coach and squad for a valid token, no auth required", async () => {
     const coach = await createCoach({ username: "coach.details", firstName: "Coach", lastName: "Details" });

@@ -29,6 +29,8 @@ export function CoachInvites() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   function refresh() {
     api.invites().then(setInvites);
@@ -73,6 +75,20 @@ export function CoachInvites() {
       setTimeout(() => setCopiedId((current) => (current === inv.id ? null : current)), 2000);
     } catch {
       setError("Couldn't copy to clipboard — copy the link manually from the invite instead.");
+    }
+  }
+
+  async function removeInvite(id: string) {
+    setRemovingId(id);
+    setError(null);
+    try {
+      await api.cancelInvite(id);
+      setConfirmRemoveId(null);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't remove that invite");
+    } finally {
+      setRemovingId((current) => (current === id ? null : current));
     }
   }
 
@@ -145,10 +161,25 @@ export function CoachInvites() {
                 </div>
                 <div className="run-row" style={{ marginTop: 8 }}>
                   <span className="run-meta">Sent {new Date(inv.createdAt).toLocaleDateString()}</span>
-                  {inv.status === "PENDING" && !expired && (
-                    <button className="btn-secondary" onClick={() => copyLink(inv)}>
-                      {copiedId === inv.id ? "Copied!" : "Copy invite link"}
-                    </button>
+                  {inv.status === "PENDING" && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {!expired && (
+                        <button className="btn-secondary" onClick={() => copyLink(inv)}>
+                          {copiedId === inv.id ? "Copied!" : "Copy invite link"}
+                        </button>
+                      )}
+                      <button
+                        className="btn-secondary"
+                        style={confirmRemoveId === inv.id ? { color: "#cf5236", borderColor: "#cf5236" } : undefined}
+                        disabled={removingId === inv.id}
+                        onClick={() =>
+                          confirmRemoveId === inv.id ? removeInvite(inv.id) : setConfirmRemoveId(inv.id)
+                        }
+                        onBlur={() => setConfirmRemoveId((current) => (current === inv.id ? null : current))}
+                      >
+                        {removingId === inv.id ? "Removing…" : confirmRemoveId === inv.id ? "Confirm remove?" : "Remove invite"}
+                      </button>
+                    </div>
                   )}
                 </div>
                 {inv.status === "PENDING" && expired && (

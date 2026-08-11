@@ -84,3 +84,21 @@ invitesRouter.post("/bulk", async (req, res) => {
 // ACCEPTED only ever happens as a side effect of a real signup, in
 // routes/inviteAccept.ts. Status shown to a coach always reflects
 // whether the invited athlete has actually created their account.
+
+// A coach can still remove a PENDING invite outright -- they've decided
+// they don't want to invite that person anymore, so the token stops
+// working (routes/inviteAccept.ts looks the invite up by row) and the
+// email is free to be re-invited later. Once ACCEPTED, there's a real
+// account and roster relationship behind it, so this route won't touch
+// it -- that's not "removing an invite" anymore.
+invitesRouter.delete("/:id", async (req, res) => {
+  const invite = await prisma.invite.findUnique({ where: { id: req.params.id } });
+  if (!invite || invite.invitedById !== req.user!.sub) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  if (invite.status !== "PENDING") {
+    return res.status(400).json({ error: "Only a pending invite can be removed" });
+  }
+  await prisma.invite.delete({ where: { id: invite.id } });
+  res.status(204).end();
+});

@@ -79,6 +79,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ emails, squadId }),
     }),
+  cancelInvite: (id: string) => request<void>(`/invites/${id}`, { method: "DELETE" }),
+
   // Public, unauthenticated -- the real half of the invite flow: an
   // invited athlete follows the link built from their invite's token to
   // look up who invited them, then create their own account.
