@@ -19,6 +19,7 @@
     "test:all": "npm run test:unit --silent && npm run test:integration --silent && npm run test:e2e --silent",
     "inspect": "tsx scripts/inspect-athlete.ts",
     "verify-roster": "tsx scripts/verify-roster-integrity.ts",
+    "create-account": "tsx scripts/create-account.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",

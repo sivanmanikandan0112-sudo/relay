@@ -275,6 +275,7 @@ especially after any change to the scoring pipeline.
 | `npm run test:backend:all` | All three tiers, in order |
 | `npm run inspect -w backend -- "<name or username>"` | Print one athlete's full readiness breakdown |
 | `npm run verify-roster -w backend` | Check every athlete's readiness pipeline for NaN/out-of-range/thrown errors |
+| `npm run create-account -w backend -- --email you@example.com` | Provision (or reset the password for) one real account with a fresh random password, printed once — see [`scripts/create-account.ts`](backend/scripts/create-account.ts). For a real deployment's database rather than your local one, prefix with `DATABASE_URL="..."` (the database's public/proxy connection string, not its internal one) |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
 | `npm run prisma:seed:real-roster -w backend` | Additively seed the 81-athlete anonymized real-mileage dataset |
