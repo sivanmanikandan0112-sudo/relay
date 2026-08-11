@@ -80,24 +80,7 @@ invitesRouter.post("/bulk", async (req, res) => {
   res.status(201).json({ created: toCreate.length, skipped: emails.length - toCreate.length, invites, emailSent: emailEnabled });
 });
 
-const statusSchema = z.object({ status: z.enum(["PENDING", "ACCEPTED", "REJECTED"]) });
-
-// A coach can also flip an invite's status by hand -- handy for demoing
-// the UI, or for marking one rejected/waiting again without a real
-// signup. Real acceptance (creating the actual account) only ever
-// happens through routes/inviteAccept.ts.
-invitesRouter.patch("/:id", async (req, res) => {
-  const parsed = statusSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const invite = await prisma.invite.findUnique({ where: { id: req.params.id } });
-  if (!invite || invite.invitedById !== req.user!.sub) {
-    return res.status(404).json({ error: "Not found" });
-  }
-  const updated = await prisma.invite.update({
-    where: { id: invite.id },
-    data: { status: parsed.data.status, respondedAt: parsed.data.status === "PENDING" ? null : new Date() },
-  });
-  res.json(updated);
-});
+// No route to set an invite's status by hand, on purpose: PENDING ->
+// ACCEPTED only ever happens as a side effect of a real signup, in
+// routes/inviteAccept.ts. Status shown to a coach always reflects
+// whether the invited athlete has actually created their account.

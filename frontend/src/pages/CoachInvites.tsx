@@ -66,11 +66,6 @@ export function CoachInvites() {
     }
   }
 
-  async function setStatus(id: string, status: Invite["status"]) {
-    await api.setInviteStatus(id, status);
-    refresh();
-  }
-
   async function copyLink(inv: Invite) {
     try {
       await navigator.clipboard.writeText(acceptUrl(inv.token));
@@ -88,8 +83,8 @@ export function CoachInvites() {
       <p className="page-subtitle">
         Paste one email per line (or comma-separated) to bulk-invite athletes to a squad. If email sending isn't
         configured, nothing is actually emailed — copy each invite's link below and share it directly (text,
-        email, whatever) instead. Either way, a real athlete follows that link to create their own account, or
-        use the status buttons to simulate a response while testing the UI.
+        email, whatever) instead. Either way, status below only changes when a real athlete actually follows
+        that link and creates their account.
       </p>
 
       <div className="panel" style={{ marginTop: 0 }}>
@@ -150,28 +145,11 @@ export function CoachInvites() {
                 </div>
                 <div className="run-row" style={{ marginTop: 8 }}>
                   <span className="run-meta">Sent {new Date(inv.createdAt).toLocaleDateString()}</span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {inv.status === "PENDING" && !expired && (
-                      <button className="btn-secondary" onClick={() => copyLink(inv)}>
-                        {copiedId === inv.id ? "Copied!" : "Copy invite link"}
-                      </button>
-                    )}
-                    {inv.status === "PENDING" && (
-                      <>
-                        <button className="btn-secondary" onClick={() => setStatus(inv.id, "ACCEPTED")}>
-                          Simulate accept
-                        </button>
-                        <button className="btn-secondary" onClick={() => setStatus(inv.id, "REJECTED")}>
-                          Simulate reject
-                        </button>
-                      </>
-                    )}
-                    {inv.status !== "PENDING" && (
-                      <button className="btn-secondary" onClick={() => setStatus(inv.id, "PENDING")}>
-                        Reset to waiting
-                      </button>
-                    )}
-                  </div>
+                  {inv.status === "PENDING" && !expired && (
+                    <button className="btn-secondary" onClick={() => copyLink(inv)}>
+                      {copiedId === inv.id ? "Copied!" : "Copy invite link"}
+                    </button>
+                  )}
                 </div>
                 {inv.status === "PENDING" && expired && (
                   <p style={{ color: "var(--text-dim)", fontSize: 11.5, marginTop: 6 }}>

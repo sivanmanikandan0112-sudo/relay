@@ -77,13 +77,13 @@ model CoachAthlete {
   @@index([athleteId])
 }
 
-// A coach's bulk-invited email addresses. No real email delivery is wired
-// up (this dev environment has no email provider configured), so the
-// coach copies/shares the accept link (built from `token`) directly --
-// see routes/inviteAccept.ts, the public, unauthenticated flow an invited
-// athlete uses to actually create their account. `PATCH /api/invites/:id`
-// separately lets a coach flip the status by hand, for demoing the UI
-// without a real signup.
+// A coach's bulk-invited email addresses. Real email delivery goes
+// through Resend when configured (see lib/email.ts); otherwise the coach
+// copies/shares the accept link (built from `token`) directly. Either
+// way, `status` only ever changes as a side effect of a real signup --
+// see routes/inviteAccept.ts, the public, unauthenticated flow an
+// invited athlete uses to actually create their account. There is no
+// route to set it by hand.
 model Invite {
   id          String       @id @default(cuid())
   email       String

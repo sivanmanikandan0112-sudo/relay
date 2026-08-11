@@ -96,9 +96,9 @@ Whether the invite email actually *sends* depends on whether [`lib/email.ts`](ba
 has a real provider configured (`RESEND_API_KEY` — see [Deploying](#deploying-railway-two-services)):
 unset (local dev/test, by default), nothing is actually emailed and the Invite screen's **"copy
 invite link"** button is how a coach shares it (text, whatever); set, each invite is emailed for
-real, on top of the copy-link button still being there as a fallback. The "simulate accept/reject"
-buttons are separate from either of those — they flip an invite's status by hand, for demoing the
-UI without a real person completing signup.
+real, on top of the copy-link button still being there as a fallback. Either way, status shown on
+the Invite screen (waiting/accepted) only ever changes as a side effect of a real signup — there
+is no way, in the UI or the API, to set it by hand.
 
 ### Forgot password
 
@@ -329,7 +329,6 @@ roster gets a 403).
 | DELETE | `/api/training-load/:id` | Delete your own logged run (athlete only) |
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |
 | POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
-| PATCH | `/api/invites/:id` | Manually set an invite's status (coach only; demo/testing, not real acceptance) |
 
 ## Deploying
 
