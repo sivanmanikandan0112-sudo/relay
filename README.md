@@ -8,6 +8,8 @@ roster so a coach knows exactly who to check in with first — instead of scanni
 walks through the math and stats step by step, cross-referenced against the real code — see the
 original handwritten derivation in [`proofs/`](proofs).
 
+🚀 **Deployment stack** (Squarespace, Cloudflare, Railway, Resend): see [Deploying](#deploying) below.
+
 ## Tech stack
 
 | Layer     | Choice |
@@ -329,9 +331,22 @@ roster gets a 403).
 | POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
 | PATCH | `/api/invites/:id` | Manually set an invite's status (coach only; demo/testing, not real acceptance) |
 
-## Deploying (Railway, two services)
+## Deploying
 
-Both services deploy from this same repo, **Root Directory set to the repo root** for both (not
+Production (`relaycoach.app`) runs on four pieces, each doing one job:
+
+| Piece | Role |
+|---|---|
+| [Squarespace](https://domains.squarespace.com) | Domain **registrar** — `relaycoach.app` was purchased here. Squarespace itself serves nothing; DNS is delegated to Cloudflare (below). |
+| [Cloudflare](https://dash.cloudflare.com) | **DNS.** `relaycoach.app` (frontend) and `api.relaycoach.app` (backend) are `CNAME`/proxy records pointed at their respective Railway services. Cloudflare also terminates TLS at the edge. |
+| [Railway](https://railway.app) | **Hosting**, all three moving parts of the app, as separate services in one project: `frontend` (static SPA build, served by `serve`), `backend` (the Express API), and `Postgres` (managed database plugin). Each has its own deploy pipeline off this repo; see the table below. |
+| [Resend](https://resend.com) | **Transactional email** (password resets, invite emails) — only active in production; see the dual-mode explanation further down. |
+
+Request flow: browser → Cloudflare (DNS + TLS) → Railway `frontend`/`backend` service → (backend only) Railway `Postgres`. Changing any DNS record or adding a new subdomain happens in Cloudflare; changing what actually runs happens in Railway; changing what domain the app answers on at all happens in Squarespace.
+
+### Railway (two app services + Postgres)
+
+Both app services deploy from this same repo, **Root Directory set to the repo root** for both (not
 `backend/`/`frontend/` — this is an npm workspaces monorepo; a per-service root directory would
 lose the workspace-hoisted `node_modules` and the root `package-lock.json`). Point each service's
 build/start at its own workspace with `-w`:
@@ -344,8 +359,10 @@ build/start at its own workspace with `-w`:
 - **Backend build** (`prisma generate && tsc`) and **start** (`prisma migrate deploy && node dist/index.js`)
   both run Prisma steps automatically — every deploy regenerates the client and applies any new
   migrations before the server starts. No manual migration step needed.
-- **Frontend start** is `vite preview --host 0.0.0.0 --port ${PORT:-4173}` — binds every interface
-  and Railway's injected `$PORT`, which a plain `vite preview` doesn't do by default.
+- **Frontend start** is `serve -s dist -l tcp://0.0.0.0:${PORT:-4173}` ([`serve`](https://github.com/vercel/serve),
+  not `vite preview` — Vite's own docs say `preview` isn't meant for production). `-s` is the
+  SPA flag: any path that isn't a static file (e.g. `/accept-invite/:token`, `/reset-password`
+  hit directly, not via client-side navigation) falls back to `index.html` instead of 404ing.
 
 ### Environment variables
 
