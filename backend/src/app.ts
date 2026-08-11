@@ -11,6 +11,8 @@ import { wellnessRouter } from "./routes/wellness.js";
 import { trainingLoadRouter } from "./routes/trainingLoad.js";
 import { invitesRouter } from "./routes/invites.js";
 import { inviteAcceptRouter } from "./routes/inviteAccept.js";
+import { schoolsRouter } from "./routes/schools.js";
+import { adminRouter } from "./routes/admin.js";
 
 // The Express app itself, with no side effects (no .listen()) -- so
 // integration/e2e tests can import it and drive it directly with
@@ -35,3 +37,5 @@ app.use("/api/wellness", wellnessRouter);
 app.use("/api/training-load", trainingLoadRouter);
 app.use("/api/invites", invitesRouter);
 app.use("/api/invite-accept", inviteAcceptRouter);
+app.use("/api/schools", schoolsRouter);
+app.use("/api/admin", adminRouter);

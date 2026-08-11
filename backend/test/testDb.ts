@@ -36,10 +36,20 @@ export async function resetDb(): Promise<void> {
   await prisma.athlete.deleteMany();
   await prisma.user.deleteMany();
   await prisma.squad.deleteMany();
+  await prisma.school.deleteMany();
 }
 
 export async function ensureSquad(name: "GIRLS" | "BOYS") {
   return prisma.squad.upsert({ where: { name }, update: {}, create: { name } });
+}
+
+export async function ensureSchool(name: string, location?: string) {
+  const nameKey = name.trim().toLowerCase();
+  return prisma.school.upsert({ where: { nameKey }, update: {}, create: { name, nameKey, location } });
+}
+
+export async function assignSchool(coachId: string, schoolId: string) {
+  return prisma.user.update({ where: { id: coachId }, data: { schoolId } });
 }
 
 interface CreateCoachInput {

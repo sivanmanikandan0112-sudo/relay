@@ -34,12 +34,12 @@ authRouter.post("/login", async (req, res) => {
   }
   const { username, password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { username } });
+  const user = await prisma.user.findUnique({ where: { username }, include: { school: true } });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return res.status(401).json({ error: "Invalid username or password" });
   }
 
-  const token = signToken({ sub: user.id, role: user.role });
+  const token = signToken({ sub: user.id, role: user.role, isSuperAdmin: user.isSuperAdmin });
   const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
 
   let gender: string | null = null;
@@ -50,7 +50,18 @@ authRouter.post("/login", async (req, res) => {
     hasCoach = (await prisma.coachAthlete.count({ where: { athleteId } })) > 0;
   }
 
-  res.json({ token, user: { ...publicUser(user), athleteId, gender, hasCoach } });
+  res.json({
+    token,
+    user: {
+      ...publicUser(user),
+      athleteId,
+      gender,
+      hasCoach,
+      schoolId: user.schoolId,
+      schoolName: user.school?.name ?? null,
+      isSuperAdmin: user.isSuperAdmin,
+    },
+  });
 });
 
 // --- Forgot / reset password -------------------------------------------

@@ -6,17 +6,41 @@ export async function getOwnAthleteId(userId: string): Promise<string | null> {
   return athlete?.id ?? null;
 }
 
-/** All Athlete.ids assigned to this coach via the CoachAthlete roster. */
+/**
+ * Every Athlete.id rostered by *any* coach at the given school -- the
+ * shared-visibility set. Deliberately a live join through User.schoolId
+ * rather than anything snapshotted on CoachAthlete: a coach's entire
+ * existing roster becomes visible the instant they join a school, with
+ * no backfill step, and would stop being visible the instant they left
+ * (if that flow existed) just as cleanly.
+ */
+export async function getSchoolAthleteIds(schoolId: string): Promise<string[]> {
+  const coaches = await prisma.user.findMany({ where: { schoolId }, select: { id: true } });
+  if (coaches.length === 0) return [];
+  const rows = await prisma.coachAthlete.findMany({
+    where: { coachId: { in: coaches.map((c) => c.id) } },
+    select: { athleteId: true },
+  });
+  return [...new Set(rows.map((r) => r.athleteId))];
+}
+
+/**
+ * All Athlete.ids this coach can see: their own CoachAthlete roster for a
+ * solo coach (no school), or every athlete rostered by anyone at their
+ * school if they belong to one.
+ */
 export async function getCoachAthleteIds(coachId: string): Promise<string[]> {
-  const rows = await prisma.coachAthlete.findMany({ where: { coachId }, select: { athleteId: true } });
-  return rows.map((r) => r.athleteId);
+  const coach = await prisma.user.findUnique({ where: { id: coachId }, select: { schoolId: true } });
+  if (!coach?.schoolId) {
+    const rows = await prisma.coachAthlete.findMany({ where: { coachId }, select: { athleteId: true } });
+    return rows.map((r) => r.athleteId);
+  }
+  return getSchoolAthleteIds(coach.schoolId);
 }
 
 export async function isCoachOfAthlete(coachId: string, athleteId: string): Promise<boolean> {
-  const row = await prisma.coachAthlete.findUnique({
-    where: { coachId_athleteId: { coachId, athleteId } },
-  });
-  return !!row;
+  const ids = await getCoachAthleteIds(coachId);
+  return ids.includes(athleteId);
 }
 
 /**

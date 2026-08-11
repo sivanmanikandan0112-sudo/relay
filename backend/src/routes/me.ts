@@ -9,7 +9,7 @@ export const meRouter = Router();
 meRouter.use(requireAuth);
 
 meRouter.get("/", async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.user!.sub } });
+  const user = await prisma.user.findUnique({ where: { id: req.user!.sub }, include: { school: true } });
   if (!user) return res.status(404).json({ error: "Not found" });
 
   const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
@@ -36,6 +36,9 @@ meRouter.get("/", async (req, res) => {
     squadId,
     gender,
     hasCoach,
+    schoolId: user.schoolId,
+    schoolName: user.school?.name ?? null,
+    isSuperAdmin: user.isSuperAdmin,
   });
 });
 

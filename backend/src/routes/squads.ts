@@ -7,7 +7,9 @@ export const squadsRouter = Router();
 
 squadsRouter.use(requireAuth, requireRole("COACH"));
 
-// Squads + counts scoped to this coach's own roster, not the whole school.
+// Squads + counts scoped to whatever getCoachAthleteIds resolves to --
+// this coach's own roster if solo, or every athlete rostered by anyone
+// at their school if they belong to one. See lib/authz.ts.
 squadsRouter.get("/", async (req, res) => {
   const athleteIds = await getCoachAthleteIds(req.user!.sub);
   const squads = await prisma.squad.findMany({

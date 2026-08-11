@@ -40,6 +40,11 @@ enum InviteStatus {
   REJECTED
 }
 
+enum InviteType {
+  ATHLETE
+  COACH_TO_SCHOOL
+}
+
 enum Gender {
   FEMALE
   MALE
@@ -55,12 +60,37 @@ model User {
   firstName     String
   lastName      String
   role          Role      @default(COACH)
+  // Coach-only fields (meaningless for role=ATHLETE, same convention as
+  // Athlete.gender being meaningless outside its own model): a coach may
+  // optionally belong to one School, which shares roster visibility with
+  // every other coach at the same school -- see lib/authz.ts.
+  school        School?   @relation(fields: [schoolId], references: [id])
+  schoolId      String?
+  isSuperAdmin  Boolean   @default(false)
   athlete       Athlete?
   notes         Note[]
   coachAthletes CoachAthlete[]
   invitesSent   Invite[]
   resetTokens   PasswordResetToken[]
   createdAt     DateTime  @default(now())
+}
+
+// An optional shared-visibility group for coaches. Deliberately NOT
+// stamped anywhere on CoachAthlete/Invite -- roster visibility for a
+// school-affiliated coach is always a live join through
+// coach.schoolId (see lib/authz.ts getSchoolAthleteIds), not a snapshot
+// taken at invite time. That means joining a school makes a coach's
+// *entire* existing roster visible schoolwide immediately, with no
+// backfill step, and leaving would (if that flow existing) do the
+// reverse just as cleanly.
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  nameKey   String   @unique // trim().toLowerCase() of name -- case-insensitive uniqueness enforced at the DB layer, race-safe
+  location  String?
+  coaches   User[]
+  invites   Invite[]
+  createdAt DateTime @default(now())
 }
 
 // Many-to-many: an athlete can have more than one coach, and a coach has a
@@ -77,21 +107,25 @@ model CoachAthlete {
   @@index([athleteId])
 }
 
-// A coach's bulk-invited email addresses. Real email delivery goes
+// Either a coach inviting an athlete (type ATHLETE, requires squadId) or
+// a coach inviting another coach into their school (type COACH_TO_SCHOOL,
+// requires schoolId) -- one shared token/expiry/email-sending mechanism
+// for both, branched in routes/inviteAccept.ts. Real email delivery goes
 // through Resend when configured (see lib/email.ts); otherwise the coach
 // copies/shares the accept link (built from `token`) directly. Either
-// way, `status` only ever changes as a side effect of a real signup --
-// see routes/inviteAccept.ts, the public, unauthenticated flow an
-// invited athlete uses to actually create their account. There is no
-// route to set it by hand.
+// way, `status` only ever changes as a side effect of a real signup or
+// a real accept -- there is no route to set it by hand.
 model Invite {
   id          String       @id @default(cuid())
   email       String
   status      InviteStatus @default(PENDING)
+  type        InviteType   @default(ATHLETE)
   invitedBy   User         @relation(fields: [invitedById], references: [id])
   invitedById String
   squad       Squad?       @relation(fields: [squadId], references: [id])
-  squadId     String? // which roster the accepted athlete joins; null on old pre-signup-flow invites
+  squadId     String? // ATHLETE invites: which roster the accepted athlete joins; null on old pre-signup-flow invites
+  school      School?      @relation(fields: [schoolId], references: [id])
+  schoolId    String? // COACH_TO_SCHOOL invites: which school the accepting coach joins
   token       String       @unique
   expiresAt   DateTime
   createdAt   DateTime     @default(now())

@@ -82,14 +82,36 @@ export const api = {
   cancelInvite: (id: string) => request<void>(`/invites/${id}`, { method: "DELETE" }),
 
   // Public, unauthenticated -- the real half of the invite flow: an
-  // invited athlete follows the link built from their invite's token to
-  // look up who invited them, then create their own account.
+  // invited person follows the link built from their invite's token to
+  // look up who invited them, then either create their own account
+  // (ATHLETE, or COACH_TO_SCHOOL with no existing account yet) or --
+  // authenticated, see acceptInvite below -- confirm joining a school
+  // with an account they already have.
   inviteDetails: (token: string) => request<InviteDetails>(`/invite-accept/${token}`),
   acceptInvite: (token: string, input: AcceptInviteInput) =>
     request<{ token: string; user: AuthUser }>(`/invite-accept/${token}`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  attachInvite: (token: string) =>
+    request<{ schoolId: string; schoolName: string | null }>(`/invite-accept/${token}/attach`, { method: "POST" }),
+
+  mySchool: () => request<{ school: SchoolDetail | null }>("/schools/mine"),
+  createSchool: (name: string, location?: string) =>
+    request<School>("/schools", { method: "POST", body: JSON.stringify({ name, location }) }),
+  school: (id: string) => request<SchoolDetail>(`/schools/${id}`),
+  inviteCoachToSchool: (schoolId: string, email: string) =>
+    request<{ invite: Invite; emailSent: boolean }>(`/schools/${schoolId}/invite-coach`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  // Super admin only (backend 403s otherwise).
+  adminOverview: () => request<AdminOverview>("/admin/overview"),
+  adminCoaches: () => request<AdminCoachSummary[]>("/admin/coaches"),
+  adminCoachDetail: (id: string) => request<AdminCoachDetail>(`/admin/coaches/${id}`),
+  adminSchools: () => request<AdminSchoolSummary[]>("/admin/schools"),
+  adminSchoolDetail: (id: string) => request<SchoolDetail>(`/admin/schools/${id}`),
 };
 
 export type Gender = "FEMALE" | "MALE" | "NONBINARY" | "PREFER_NOT_TO_SAY";
@@ -106,6 +128,9 @@ export interface AuthUser {
   squadId?: string | null;
   gender?: Gender | null;
   hasCoach?: boolean;
+  schoolId?: string | null;
+  schoolName?: string | null;
+  isSuperAdmin?: boolean;
 }
 
 export interface Squad {
@@ -186,11 +211,15 @@ export interface Run extends RunInput {
   load: number;
 }
 
+export type InviteType = "ATHLETE" | "COACH_TO_SCHOOL";
+
 export interface Invite {
   id: string;
   email: string;
   status: "PENDING" | "ACCEPTED" | "REJECTED";
+  type: InviteType;
   squadId: string | null;
+  schoolId: string | null;
   token: string;
   expiresAt: string;
   createdAt: string;
@@ -199,8 +228,14 @@ export interface Invite {
 
 export interface InviteDetails {
   email: string;
+  type: InviteType;
   squadName: "GIRLS" | "BOYS" | null;
+  schoolName: string | null;
   coachName: string;
+  // COACH_TO_SCHOOL only -- whether this email already has an account.
+  // true means accepting means logging in and confirming (see
+  // api.attachInvite), not creating a new account.
+  targetAccountExists: boolean;
 }
 
 export interface AcceptInviteInput {
@@ -208,4 +243,53 @@ export interface AcceptInviteInput {
   password: string;
   firstName: string;
   lastName: string;
+}
+
+export interface School {
+  id: string;
+  name: string;
+  location: string | null;
+}
+
+export interface SchoolCoach {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+}
+
+export interface SchoolDetail extends School {
+  coaches: SchoolCoach[];
+  athleteCount: number;
+  invites: Invite[];
+}
+
+export interface AdminOverview {
+  schoolCount: number;
+  coachCount: number;
+  athleteCount: number;
+  soloCoachCount: number;
+}
+
+export interface AdminCoachSummary {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+  schoolId: string | null;
+  schoolName: string | null;
+  athleteCount: number;
+  createdAt: string;
+}
+
+export interface AdminCoachDetail extends Omit<AdminCoachSummary, "athleteCount"> {
+  athletes: Array<{ id: string; name: string; squadName: "GIRLS" | "BOYS"; gender: Gender | null }>;
+}
+
+export interface AdminSchoolSummary extends School {
+  coachCount: number;
+  athleteCount: number;
+  createdAt: string;
 }

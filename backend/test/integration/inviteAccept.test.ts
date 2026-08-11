@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, loginAs } from "./helpers.js";
-import { createCoach, ensureSquad, resetDb } from "../testDb.js";
+import { assignSchool, createCoach, ensureSchool, ensureSquad, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 
 beforeEach(async () => {
@@ -235,5 +235,142 @@ describe("POST /api/invite-accept/:token", () => {
       .post(`/api/invite-accept/${invite.token}`)
       .send({ username: "short.pw", password: "short", firstName: "Short", lastName: "Pw" });
     expect(res.status).toBe(400);
+  });
+});
+
+async function sendCoachInvite(coachToken: string, schoolId: string, email: string) {
+  const res = await request(app)
+    .post(`/api/schools/${schoolId}/invite-coach`)
+    .set("Authorization", `Bearer ${coachToken}`)
+    .send({ email });
+  return res.body.invite as { id: string; token: string };
+}
+
+describe("GET /api/invite-accept/:token -- COACH_TO_SCHOOL", () => {
+  it("returns type, schoolName, and targetAccountExists: false for a brand-new email", async () => {
+    const school = await ensureSchool("Flower Mound High School");
+    const coach = await createCoach({ username: "coach.schoolinviter", firstName: "School", lastName: "Inviter" });
+    await assignSchool(coach.id, school.id);
+    const token = await loginAs("coach.schoolinviter");
+    const invite = await sendCoachInvite(token, school.id, "newcoach@example.com");
+
+    const res = await request(app).get(`/api/invite-accept/${invite.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      type: "COACH_TO_SCHOOL",
+      schoolName: "Flower Mound High School",
+      squadName: null,
+      targetAccountExists: false,
+    });
+  });
+
+  it("targetAccountExists: true when the invited email already has an account", async () => {
+    const school = await ensureSchool("Marcus High School");
+    const inviter = await createCoach({ username: "coach.marcus.inviter", firstName: "Marcus", lastName: "Inviter" });
+    await assignSchool(inviter.id, school.id);
+    const inviterToken = await loginAs("coach.marcus.inviter");
+    await createCoach({ username: "coach.alreadyexists", firstName: "Already", lastName: "Exists" }); // email: coach.alreadyexists@test.relay
+    const invite = await sendCoachInvite(inviterToken, school.id, "coach.alreadyexists@test.relay");
+
+    const res = await request(app).get(`/api/invite-accept/${invite.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.targetAccountExists).toBe(true);
+  });
+});
+
+describe("POST /api/invite-accept/:token -- COACH_TO_SCHOOL, new account", () => {
+  it("creates a role: COACH account with schoolId set, no Athlete/CoachAthlete rows", async () => {
+    const school = await ensureSchool("New Coach High");
+    const coach = await createCoach({ username: "coach.newcoachinviter", firstName: "New", lastName: "CoachInviter" });
+    await assignSchool(coach.id, school.id);
+    const token = await loginAs("coach.newcoachinviter");
+    const invite = await sendCoachInvite(token, school.id, "brandnew@example.com");
+
+    const res = await request(app).post(`/api/invite-accept/${invite.token}`).send({
+      username: "brand.new",
+      password: "RealPassword123!",
+      firstName: "Brand",
+      lastName: "New",
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.user).toMatchObject({ role: "COACH", schoolId: school.id, isSuperAdmin: false, athleteId: null });
+
+    const created = await prisma.user.findUnique({ where: { username: "brand.new" } });
+    expect(created?.role).toBe("COACH");
+    expect(created?.schoolId).toBe(school.id);
+    expect(await prisma.athlete.findUnique({ where: { userId: created!.id } })).toBeNull();
+    expect(await prisma.coachAthlete.count({ where: { coachId: created!.id } })).toBe(0);
+
+    const updatedInvite = await prisma.invite.findUnique({ where: { id: invite.id } });
+    expect(updatedInvite?.status).toBe("ACCEPTED");
+  });
+});
+
+describe("POST /api/invite-accept/:token/attach -- COACH_TO_SCHOOL, existing account", () => {
+  it("sets schoolId on the authenticated caller when their email matches the invite", async () => {
+    const school = await ensureSchool("Attach High");
+    const inviter = await createCoach({ username: "coach.attachinviter", firstName: "Attach", lastName: "Inviter" });
+    await assignSchool(inviter.id, school.id);
+    const inviterToken = await loginAs("coach.attachinviter");
+    await createCoach({ username: "coach.attachtarget", firstName: "Attach", lastName: "Target" }); // coach.attachtarget@test.relay
+    const invite = await sendCoachInvite(inviterToken, school.id, "coach.attachtarget@test.relay");
+
+    const targetToken = await loginAs("coach.attachtarget");
+    const res = await request(app)
+      .post(`/api/invite-accept/${invite.token}/attach`)
+      .set("Authorization", `Bearer ${targetToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.schoolId).toBe(school.id);
+
+    const updated = await prisma.user.findUnique({ where: { username: "coach.attachtarget" } });
+    expect(updated?.schoolId).toBe(school.id);
+    const updatedInvite = await prisma.invite.findUnique({ where: { id: invite.id } });
+    expect(updatedInvite?.status).toBe("ACCEPTED");
+  });
+
+  it("403s when the authenticated caller's email doesn't match the invite", async () => {
+    const school = await ensureSchool("Wrong Account High");
+    const inviter = await createCoach({ username: "coach.wronginviter", firstName: "Wrong", lastName: "Inviter" });
+    await assignSchool(inviter.id, school.id);
+    const inviterToken = await loginAs("coach.wronginviter");
+    await createCoach({ username: "coach.realtarget", firstName: "Real", lastName: "Target" });
+    const invite = await sendCoachInvite(inviterToken, school.id, "coach.realtarget@test.relay");
+
+    const impostor = await createCoach({ username: "coach.impostor", firstName: "Impostor", lastName: "Coach" });
+    const impostorToken = await loginAs("coach.impostor");
+    const res = await request(app)
+      .post(`/api/invite-accept/${invite.token}/attach`)
+      .set("Authorization", `Bearer ${impostorToken}`);
+    expect(res.status).toBe(403);
+    expect(impostor).toBeTruthy();
+
+    const updatedInvite = await prisma.invite.findUnique({ where: { id: invite.id } });
+    expect(updatedInvite?.status).toBe("PENDING"); // not consumed by the failed attempt
+  });
+
+  it("401s unauthenticated", async () => {
+    const school = await ensureSchool("Unauth High");
+    const inviter = await createCoach({ username: "coach.unauthinviter", firstName: "Unauth", lastName: "Inviter" });
+    await assignSchool(inviter.id, school.id);
+    const inviterToken = await loginAs("coach.unauthinviter");
+    const invite = await sendCoachInvite(inviterToken, school.id, "someone@example.com");
+
+    const res = await request(app).post(`/api/invite-accept/${invite.token}/attach`);
+    expect(res.status).toBe(401);
+  });
+
+  it("400s for an ATHLETE-type invite token", async () => {
+    const squad = await ensureSquad("GIRLS");
+    const coach = await createCoach({ username: "coach.wrongtype", firstName: "Wrong", lastName: "Type" });
+    const coachToken = await loginAs("coach.wrongtype");
+    const athleteInvite = await sendInvite(coachToken, "athletetarget@example.com", squad.id);
+
+    const someCoach = await createCoach({ username: "coach.attachattempt", firstName: "Attach", lastName: "Attempt" });
+    const someToken = await loginAs("coach.attachattempt");
+    const res = await request(app)
+      .post(`/api/invite-accept/${athleteInvite.token}/attach`)
+      .set("Authorization", `Bearer ${someToken}`);
+    expect(res.status).toBe(400);
+    expect(someCoach).toBeTruthy();
   });
 });

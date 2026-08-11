@@ -6,7 +6,11 @@
 // real person's real login, most likely against a production database.
 //
 // Usage:
-//   npm run create-account -w backend -- --email you@example.com [--role COACH|ATHLETE] [--first Jane] [--last Doe] [--username jane.doe] [--squad GIRLS|BOYS]
+//   npm run create-account -w backend -- --email you@example.com [--role COACH|ATHLETE] [--first Jane] [--last Doe] [--username jane.doe] [--squad GIRLS|BOYS] [--make-super-admin]
+//
+// --make-super-admin grants the system-wide admin role (only valid with
+// --role COACH, the default) -- safe to re-run on an existing account
+// too, same as the password reset.
 //
 // Safe to re-run: an existing account (by email) gets its password reset
 // to a new random value instead of erroring.
@@ -32,6 +36,7 @@ interface Args {
   last: string;
   username: string;
   squad?: "GIRLS" | "BOYS";
+  makeSuperAdmin: boolean;
 }
 
 function parseArgs(): Args {
@@ -40,9 +45,16 @@ function parseArgs(): Args {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith("--")) {
       const key = argv[i].slice(2);
-      const value = argv[i + 1];
-      raw[key] = value;
-      i++;
+      const next = argv[i + 1];
+      // Bare boolean flags (e.g. --make-super-admin with nothing after
+      // it, or immediately followed by another --flag) don't consume a
+      // value token -- everything else keeps today's behavior.
+      if (next === undefined || next.startsWith("--")) {
+        raw[key] = "true";
+      } else {
+        raw[key] = next;
+        i++;
+      }
     }
   }
 
@@ -74,7 +86,13 @@ function parseArgs(): Args {
     }
   }
 
-  return { email, role, first, last, username, squad };
+  const makeSuperAdmin = raw["make-super-admin"] === "true";
+  if (makeSuperAdmin && role !== "COACH") {
+    console.error("--make-super-admin only applies to --role COACH");
+    process.exit(1);
+  }
+
+  return { email, role, first, last, username, squad, makeSuperAdmin };
 }
 
 function capitalize(s: string): string {
@@ -87,7 +105,7 @@ function generatePassword(): string {
 }
 
 async function main() {
-  const { email, role, first, last, username, squad } = parseArgs();
+  const { email, role, first, last, username, squad, makeSuperAdmin } = parseArgs();
   const password = generatePassword();
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -98,8 +116,14 @@ async function main() {
   let athleteId: string | null = null;
 
   if (existingByEmail) {
-    // Re-running for an account that already exists: just rotate its password.
-    user = await prisma.user.update({ where: { id: existingByEmail.id }, data: { passwordHash } });
+    // Re-running for an account that already exists: just rotate its
+    // password (and grant super admin too, if asked -- never revokes it
+    // on a re-run without the flag, same "additive, never surprises you"
+    // spirit as the password-reset-only behavior here).
+    user = await prisma.user.update({
+      where: { id: existingByEmail.id },
+      data: { passwordHash, ...(makeSuperAdmin ? { isSuperAdmin: true } : {}) },
+    });
     const athlete = await prisma.athlete.findUnique({ where: { userId: user.id } });
     athleteId = athlete?.id ?? null;
   } else {
@@ -108,7 +132,7 @@ async function main() {
       process.exit(1);
     }
     user = await prisma.user.create({
-      data: { email, username, passwordHash, firstName: first, lastName: last, role },
+      data: { email, username, passwordHash, firstName: first, lastName: last, role, isSuperAdmin: makeSuperAdmin },
     });
     if (role === "ATHLETE") {
       const squadRow = await prisma.squad.upsert({ where: { name: squad! }, update: {}, create: { name: squad! } });
@@ -122,7 +146,7 @@ async function main() {
   console.log(`\n${existingByEmail ? "Password reset" : "Account created"} for ${email}:\n`);
   console.log(`  email:    ${user.email}`);
   console.log(`  username: ${user.username}`);
-  console.log(`  role:     ${user.role}`);
+  console.log(`  role:     ${user.role}${user.isSuperAdmin ? " (super admin)" : ""}`);
   if (athleteId) console.log(`  athleteId: ${athleteId} (no coach/squad roster assignment made -- add one separately if needed)`);
   console.log(`  password: ${password}`);
   console.log(`\nCopy that password now -- it is not stored anywhere and will not be shown again.\n`);

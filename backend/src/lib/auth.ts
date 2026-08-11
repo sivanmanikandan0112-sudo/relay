@@ -5,6 +5,11 @@ import type { Role } from "@prisma/client";
 export interface AuthPayload {
   sub: string;
   role: Role;
+  // Folded into the token like `role` rather than looked up per-request --
+  // rarely changes, same staleness profile a demoted coach already has
+  // today (up to 7d, this token's own expiry). Optional so tokens issued
+  // before this field existed still verify; treated as false when absent.
+  isSuperAdmin?: boolean;
 }
 
 export function signToken(payload: AuthPayload): string {

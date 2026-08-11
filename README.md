@@ -115,14 +115,63 @@ directly and the UI shows a "continue to reset" link built from it, instead of e
 one configured, it emails the reset link for real and the token never appears in the API response
 at all — returning it there would defeat the point of proving the requester owns that inbox.
 
+### Schools — shared roster visibility across a coaching staff
+
+A `Coach` (any `User` with `role: COACH`) may optionally belong to one `School`. Coaches at the
+same school automatically share visibility of every athlete anyone there has ever rostered — not
+just the ones they personally invited. A solo coach (no school) keeps today's behavior exactly:
+their own `CoachAthlete` roster, nothing more.
+
+This is a **live join**, not anything stamped on `CoachAthlete`/`Invite` at invite time: every
+roster-scoped route (`getCoachAthleteIds`/`getSchoolAthleteIds` in
+[`lib/authz.ts`](backend/src/lib/authz.ts)) checks the requesting coach's *current* `schoolId` on
+every request. That means joining a school makes a coach's entire pre-existing roster visible
+schoolwide immediately, with no backfill step, and it's the single choke-point every other route
+already goes through — nothing else had to change to pick up shared visibility.
+
+**Self-service, not admin-driven**: any coach can type in a school name (`POST /api/schools`) to
+create one and become its first member — but only if that exact name (case-insensitive) doesn't
+already exist (409 if it does, race-safe via a DB-level unique constraint on a normalized
+`nameKey` — not just a pre-check). Joining an *existing* school always goes through a real invite,
+never by independently typing the same name — that would let anyone claim membership, and the
+whole shared roster that comes with it, with zero consent from anyone already there.
+
+A coach at a school can invite another coach into it (`POST /api/schools/:id/invite-coach`,
+single email — see the **School** tab). This reuses the same `Invite`/token/expiry/email
+machinery as the athlete bulk-invite (`Invite.type: COACH_TO_SCHOOL` instead of `ATHLETE`), and
+branches at accept time:
+- **No account yet for that email** — the existing `/accept-invite/:token` create-account form,
+  reused as-is; creates a `User` with `role: COACH` and `schoolId` set directly (no `Athlete`/
+  `CoachAthlete` rows — a coach's visibility comes entirely from the live join above).
+- **An account already exists for that email** — never silently reassigned. The account owner
+  must sign in as *themself* and explicitly confirm (`POST /api/invite-accept/:token/attach`,
+  authenticated, checks the caller's own email matches the invite) — the same link renders a
+  distinct "log in to confirm you're joining" panel instead of a signup form.
+
+### Super admin
+
+`User.isSuperAdmin` (folded into the JWT like `role`, checked by `requireSuperAdmin` — see
+[`middleware/requireAuth.ts`](backend/src/middleware/requireAuth.ts)) unlocks a read-only,
+system-wide `/admin` area: every school, every coach, every athlete, independent of any school
+membership. Granted via `create-account.ts --make-super-admin` (see [Scripts](#scripts)) — there's
+no self-service path to it, on purpose. Deliberately read-only for creating/inviting: an admin can
+still invite a coach into any school (`POST /api/schools/:id/invite-coach` allows a super admin to
+bypass the normal "must already belong to this school" check), but there's no admin-only
+school-creation action, since that would either create an empty school or auto-join the admin's
+own account as a member just to create one — self-service creation already covers it.
+
 ## Data model
 
 - **Squad** — a roster grouping (Girls, Boys)
 - **Athlete** — belongs to a squad; optionally linked to a `User` for athlete login; `gender`
   (`FEMALE` / `MALE` / `NONBINARY` / `PREFER_NOT_TO_SAY`), required at login if unset
 - **CoachAthlete** — many-to-many roster assignment between coach `User`s and `Athlete`s
-- **Invite** — a coach's bulk-invited email + status + target squad + a unique accept token/expiry;
-  accepting one for real (`/accept-invite/:token`) creates the `User`/`Athlete`/`CoachAthlete` rows
+- **School** — an optional shared-visibility group for coaches (see
+  [Schools](#schools--shared-roster-visibility-across-a-coaching-staff)); a `User` with
+  `role: COACH` may optionally belong to one, via `User.schoolId`
+- **Invite** — an email + status + type (`ATHLETE` or `COACH_TO_SCHOOL`) + a target (squad or
+  school) + a unique accept token/expiry; accepting one for real (`/accept-invite/:token`) creates
+  the account (and, for `ATHLETE`, the `Athlete`/`CoachAthlete` rows too)
 - **PasswordResetToken** — simulated forgot-password flow
 - **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus
   an optional note. An athlete can only ever write their own (the athlete ID comes from the JWT,
@@ -284,7 +333,7 @@ especially after any change to the scoring pipeline.
 | `npm run test:backend:all` | All three tiers, in order |
 | `npm run inspect -w backend -- "<name or username>"` | Print one athlete's full readiness breakdown |
 | `npm run verify-roster -w backend` | Check every athlete's readiness pipeline for NaN/out-of-range/thrown errors |
-| `npm run create-account -w backend -- --email you@example.com` | Provision (or reset the password for) one real account with a fresh random password, printed once — see [`scripts/create-account.ts`](backend/scripts/create-account.ts). For a real deployment's database rather than your local one, prefix with `DATABASE_URL="..."` (the database's public/proxy connection string, not its internal one) |
+| `npm run create-account -w backend -- --email you@example.com [--make-super-admin]` | Provision (or reset the password for) one real account with a fresh random password, printed once — see [`scripts/create-account.ts`](backend/scripts/create-account.ts). `--make-super-admin` grants the system-wide admin role (coach accounts only) — the only way to grant it, on purpose, no self-service path. For a real deployment's database rather than your local one, prefix with `DATABASE_URL="..."` (the database's public/proxy connection string, not its internal one) |
 | `npm run prisma:migrate -w backend` | Apply Prisma migrations |
 | `npm run prisma:seed -w backend` | Reseed coaches, athletes, rosters, and sample invites |
 | `npm run prisma:seed:real-roster -w backend` | Additively seed the 81-athlete anonymized real-mileage dataset |
@@ -305,20 +354,28 @@ The integration and e2e tiers both run against a real `relay_test` Postgres data
 
 ## REST API
 
-All routes are under `/api`. Aside from `/api/auth/*`, `/api/invite-accept/*`, and `/api/health`,
-every route requires an `Authorization: Bearer <token>` header, and coach-scoped routes further
-filter to that coach's own `CoachAthlete` roster (a coach requesting an athlete not on their
-roster gets a 403).
+All routes are under `/api`. Aside from `/api/auth/*`, `/api/invite-accept/:token` (GET/POST, not
+`/attach`), and `/api/health`, every route requires an `Authorization: Bearer <token>` header.
+Coach-scoped routes filter to whatever `getCoachAthleteIds` resolves to (see
+[Schools](#schools--shared-roster-visibility-across-a-coaching-staff)) — a solo coach's own
+`CoachAthlete` roster, or every athlete rostered by anyone at their school; requesting an athlete
+outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Log in with username + password, returns a JWT |
 | POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
-| GET | `/api/invite-accept/:token` | Public: look up who invited you (no auth) |
-| POST | `/api/invite-accept/:token` | Public: create your account and log in (no auth) |
-| GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach if an athlete) |
-| PATCH | `/api/me/gender` | Set your gender (athlete only — required before anything else works) |
+| GET | `/api/invite-accept/:token` | Public: look up who invited you, invite type, and (COACH_TO_SCHOOL) whether that email already has an account (no auth) |
+| POST | `/api/invite-accept/:token` | Public: create your account and log in — role/effects depend on invite type (no auth) |
+| POST | `/api/invite-accept/:token/attach` | Confirm joining a school with an account you already have (authenticated; caller's email must match the invite) |
+| GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach, schoolId/schoolName, isSuperAdmin) |
+| PATCH | `/api/me/gender` | Set your gender (athlete only — also moves you into the matching squad) |
+| POST | `/api/schools` | Self-service: create a school and become its first member (coach only; 409 if the name already exists) |
+| GET | `/api/schools/mine` | Your own school (member coaches, shared roster size, pending coach invites) — null if solo |
+| GET | `/api/schools/:id` | A school's detail (member or super admin only) |
+| POST | `/api/schools/:id/invite-coach` | Invite a coach into this school by email (member or super admin only) |
+| GET | `/api/admin/overview` \| `/coaches` \| `/coaches/:id` \| `/schools` \| `/schools/:id` | Read-only, system-wide (super admin only) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |

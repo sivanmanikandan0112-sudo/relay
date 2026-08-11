@@ -31,3 +31,10 @@ export function requireRole(...roles: Array<"COACH" | "ATHLETE">) {
     next();
   };
 }
+
+export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.user?.isSuperAdmin) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+}

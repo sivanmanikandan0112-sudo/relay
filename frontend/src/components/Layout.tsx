@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Squad } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +10,7 @@ const COACH_TABS = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/injuries", label: "Injuries" },
   { to: "/invite", label: "Invite" },
+  { to: "/school", label: "School" },
   { to: "/how-it-works", label: "How it works" },
 ];
 
@@ -74,6 +75,11 @@ export function Layout() {
               Week {currentIsoWeek(now)} · {monthLabel}
             </span>
           </div>
+          {user?.isSuperAdmin && (
+            <Link to="/admin" className="btn-secondary" style={{ textDecoration: "none" }}>
+              Admin
+            </Link>
+          )}
           <div className="user-menu">
             <span className="user-name">
               {user?.name} <span className="user-role">{user?.role === "COACH" ? "Coach" : "Athlete"}</span>
