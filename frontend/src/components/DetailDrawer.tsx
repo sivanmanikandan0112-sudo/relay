@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
-import { api, type AthleteDetail, type Note, type ReadinessScoreRecord, type Run, type WellnessEntry } from "../lib/api";
+import {
+  api,
+  type AthleteDetail,
+  type AthleteStatsResponse,
+  type Note,
+  type ReadinessScoreRecord,
+  type Run,
+  type WellnessEntry,
+} from "../lib/api";
 import { STATUS_COLOR, STATUS_LABEL, scoreIsMeaningful } from "../lib/status";
 import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
+import { AthleteStats } from "./AthleteStats";
+import { WorkloadAnalysis } from "./WorkloadAnalysis";
 
 interface DetailDrawerProps {
   athleteId: string;
@@ -17,6 +27,7 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
   const [wellness, setWellness] = useState<WellnessEntry[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [athleteStats, setAthleteStats] = useState<AthleteStatsResponse | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
 
   function refresh() {
@@ -25,6 +36,7 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
     api.wellnessForAthlete(athleteId).then(setWellness);
     api.runsForAthlete(athleteId).then(setRuns);
     api.notesForAthlete(athleteId).then(setNotes);
+    api.athleteStats(athleteId).then(setAthleteStats);
   }
 
   useEffect(refresh, [athleteId]);
@@ -93,6 +105,9 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
               </div>
             </div>
           </div>
+
+          {athleteStats && <AthleteStats stats={athleteStats.stats} />}
+          {athleteStats && <WorkloadAnalysis workload={athleteStats.workload} />}
 
           <div className="drawer-section-label">CHECK-IN HISTORY · LAST 7 DAYS</div>
           <div className="drawer-grid-panel">

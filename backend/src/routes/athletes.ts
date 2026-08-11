@@ -2,6 +2,8 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { canAccessAthlete } from "../lib/authz.js";
+import { computeReadinessBreakdown } from "../lib/scoring.js";
+import { getDataPhase, mean } from "../lib/math.js";
 
 export const athletesRouter = Router();
 
@@ -31,4 +33,70 @@ athletesRouter.get("/:id/readiness-history", async (req, res) => {
     orderBy: [{ year: "asc" }, { week: "asc" }],
   });
   res.json(scores);
+});
+
+// Section 1 ("Stats"): season-to-date totals/averages + chart series --
+// always meaningful from session 1, so no lookback window and no
+// phase-gating, unlike the readiness pipeline itself. Section 2
+// ("Workload"): the exact same acute/chronic/ACWR/risk numbers the
+// readiness pipeline already computes (lib/scoring.ts), just surfaced as
+// raw numbers instead of only the final rounded status -- no new math --
+// plus a display-confidence phase (lib/math.ts getDataPhase) so the
+// coach doesn't put weight on ACWR/risk before there's enough history
+// for them to mean anything.
+athletesRouter.get("/:id/stats", async (req, res) => {
+  const athleteId = req.params.id;
+  if (!(await canAccessAthlete(req.user!, athleteId))) {
+    return res.status(403).json({ error: "Not your athlete" });
+  }
+
+  const [loads, wellness, breakdown] = await Promise.all([
+    prisma.trainingLoad.findMany({ where: { athleteId }, orderBy: { date: "asc" } }),
+    prisma.wellnessEntry.findMany({ where: { athleteId }, orderBy: { date: "asc" } }),
+    computeReadinessBreakdown(athleteId),
+  ]);
+
+  // Strength/cross-training days can be logged with no distance -- they
+  // still count as a session (sessionCount, avgRpe) but are excluded from
+  // anything distance/pace-based, same as the readiness pipeline already
+  // excludes them from effort-cost.
+  const distanceLoads = loads.filter((l): l is typeof l & { distanceMiles: number } => l.distanceMiles != null);
+  const totalDistanceMiles = distanceLoads.reduce((sum, l) => sum + l.distanceMiles, 0);
+  const totalDurationOverDistance = distanceLoads.reduce((sum, l) => sum + l.durationMin, 0);
+  const avgPaceMinPerMile = totalDistanceMiles > 0 ? totalDurationOverDistance / totalDistanceMiles : null;
+
+  const weekAgo = new Date(Date.now() - 7 * 86400000);
+  const weeklyDistanceMiles = distanceLoads
+    .filter((l) => l.date >= weekAgo)
+    .reduce((sum, l) => sum + l.distanceMiles, 0);
+
+  const phase = getDataPhase(breakdown.daysOfHistory);
+
+  res.json({
+    stats: {
+      totalDistanceMiles,
+      avgPaceMinPerMile,
+      weeklyDistanceMiles,
+      sessionCount: loads.length,
+      avgRpe: loads.length > 0 ? mean(loads.map((l) => l.rpe)) : null,
+      avgSleep: wellness.length > 0 ? mean(wellness.map((w) => w.sleep)) : null,
+      avgEnergy: wellness.length > 0 ? mean(wellness.map((w) => w.energy)) : null,
+      distanceSeries: distanceLoads.map((l) => ({ date: l.date, distanceMiles: l.distanceMiles })),
+      rpeSeries: loads.map((l) => ({ date: l.date, rpe: l.rpe })),
+      paceSeries: distanceLoads.map((l) => ({ date: l.date, paceMinPerMile: l.durationMin / l.distanceMiles })),
+      sleepSeries: wellness.map((w) => ({ date: w.date, value: w.sleep })),
+      energySeries: wellness.map((w) => ({ date: w.date, value: w.energy })),
+    },
+    workload: {
+      daysTracked: breakdown.daysOfHistory,
+      phase: phase.phase,
+      acuteReady: phase.acuteReady,
+      chronicReady: phase.chronicReady,
+      acuteLoad: breakdown.acuteLoad,
+      chronicLoad: breakdown.chronicLoad,
+      acwr: breakdown.acwr,
+      risk: breakdown.risk,
+      status: breakdown.status,
+    },
+  });
 });

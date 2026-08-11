@@ -244,6 +244,32 @@ export function isExcluded(date: Date, ranges: ExclusionRange[]): boolean {
 }
 
 // ---------------------------------------------------------------------
+// Display-confidence phase for the coach-facing workload numbers
+// ---------------------------------------------------------------------
+
+/**
+ * A separate, purely-presentational gate from MIN_HISTORY_DAYS above --
+ * that one controls when the z-score pipeline (and therefore the actual
+ * stored readiness score) starts producing signal at all. This one just
+ * says how much to trust/show the raw ACWR and risk *numbers* on the
+ * athlete detail view, using the pipeline's own existing acute/chronic
+ * window lengths as the natural boundaries rather than inventing new
+ * ones: under a week, there's no acute load yet at all; under a full
+ * chronic window, ACWR/risk are real but noisier than they'll settle to.
+ */
+export function getDataPhase(daysTracked: number): {
+  phase: "building" | "partial" | "complete";
+  acuteReady: boolean;
+  chronicReady: boolean;
+} {
+  return {
+    phase: daysTracked >= CHRONIC_WINDOW_DAYS ? "complete" : daysTracked >= ACUTE_WINDOW_DAYS ? "partial" : "building",
+    acuteReady: daysTracked >= ACUTE_WINDOW_DAYS,
+    chronicReady: daysTracked >= CHRONIC_WINDOW_DAYS,
+  };
+}
+
+// ---------------------------------------------------------------------
 // Calendar -- ISO week numbering
 // ---------------------------------------------------------------------
 

@@ -67,6 +67,7 @@ export const api = {
   notesForAthlete: (athleteId: string) => request<Note[]>(`/notes/athlete/${athleteId}`),
   readinessHistory: (athleteId: string) =>
     request<ReadinessScoreRecord[]>(`/athletes/${athleteId}/readiness-history`),
+  athleteStats: (athleteId: string) => request<AthleteStatsResponse>(`/athletes/${athleteId}/stats`),
   submitWellness: (entry: WellnessInput) =>
     request<WellnessEntry>("/wellness", { method: "POST", body: JSON.stringify(entry) }),
   logRun: (entry: RunInput) => request<Run>("/training-load", { method: "POST", body: JSON.stringify(entry) }),
@@ -148,6 +149,60 @@ export interface Athlete {
 export interface AthleteDetail extends Athlete {
   squad: Squad;
   injuries: Injury[];
+}
+
+export interface DistancePoint {
+  date: string;
+  distanceMiles: number;
+}
+
+export interface RpePoint {
+  date: string;
+  rpe: number;
+}
+
+export interface PacePoint {
+  date: string;
+  paceMinPerMile: number;
+}
+
+export interface ValuePoint {
+  date: string;
+  value: number;
+}
+
+export interface AthleteStats {
+  totalDistanceMiles: number;
+  avgPaceMinPerMile: number | null;
+  weeklyDistanceMiles: number;
+  sessionCount: number;
+  avgRpe: number | null;
+  avgSleep: number | null;
+  avgEnergy: number | null;
+  distanceSeries: DistancePoint[];
+  rpeSeries: RpePoint[];
+  paceSeries: PacePoint[];
+  sleepSeries: ValuePoint[];
+  energySeries: ValuePoint[];
+}
+
+export type DataPhase = "building" | "partial" | "complete";
+
+export interface Workload {
+  daysTracked: number;
+  phase: DataPhase;
+  acuteReady: boolean;
+  chronicReady: boolean;
+  acuteLoad: number;
+  chronicLoad: number;
+  acwr: number;
+  risk: number;
+  status: ReadinessStatus;
+}
+
+export interface AthleteStatsResponse {
+  stats: AthleteStats;
+  workload: Workload;
 }
 
 export interface ReadinessScoreRecord {

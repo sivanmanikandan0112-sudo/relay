@@ -12,6 +12,7 @@ import {
   effortCost,
   ewmaLambda,
   ewmaSeries,
+  getDataPhase,
   isEasyRun,
   isExcluded,
   logisticRisk,
@@ -303,5 +304,22 @@ describe("calendar: currentIsoWeek", () => {
     const week2 = currentIsoWeek(new Date(2026, 7, 10));
     expect(week2.week).toBe(week1.week + 1);
     expect(week2.year).toBe(week1.year);
+  });
+});
+
+describe("getDataPhase (coach-facing workload display confidence)", () => {
+  it("building below the acute window (0-6 days)", () => {
+    expect(getDataPhase(0)).toEqual({ phase: "building", acuteReady: false, chronicReady: false });
+    expect(getDataPhase(6)).toEqual({ phase: "building", acuteReady: false, chronicReady: false });
+  });
+
+  it("partial from the acute window up to (not including) the chronic window (7-27 days)", () => {
+    expect(getDataPhase(7)).toEqual({ phase: "partial", acuteReady: true, chronicReady: false });
+    expect(getDataPhase(27)).toEqual({ phase: "partial", acuteReady: true, chronicReady: false });
+  });
+
+  it("complete at the chronic window and beyond (28+ days)", () => {
+    expect(getDataPhase(28)).toEqual({ phase: "complete", acuteReady: true, chronicReady: true });
+    expect(getDataPhase(90)).toEqual({ phase: "complete", acuteReady: true, chronicReady: true });
   });
 });

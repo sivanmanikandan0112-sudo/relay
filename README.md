@@ -224,6 +224,27 @@ days: every wellness check-in (all 5 fields, color-coded) and every logged run �
 number of most-recent rows, so an athlete who checked in or logged runs more than once a day still
 shows everything from the week.
 
+The drawer also has two always-different sections, both backed by
+[`GET /api/athletes/:id/stats`](backend/src/routes/athletes.ts):
+
+- **Stats** — always visible, no matter how little history exists: season-to-date total distance,
+  average pace, this week's distance, session count, average RPE, average sleep/energy, and small
+  charts (distance-over-time bars, RPE/pace trend lines, sleep/energy sparklines — even a single
+  logged session draws something, not an empty chart). A strength/cross-training session with no
+  distance still counts toward session count and average RPE, just not distance or pace.
+- **Workload analysis** — the *same* acute/chronic EWMA load, ACWR, and 0–100 risk score the
+  readiness pipeline above already computes for every athlete, just surfaced as raw numbers
+  instead of only the final rounded status. Phase-gated on how many days of history exist, using
+  the pipeline's own acute (7-day) and chronic (28-day) window lengths as the boundaries — a
+  separate, purely-presentational confidence layer from the two-week minimum that gates the
+  readiness score itself:
+  - **Under 7 days** — a progress bar ("Building baseline — N / 7 days"), no numbers yet.
+  - **7–27 days** — the numbers, with an "Inconclusive — N / 28 days" banner and neutral/amber
+    coloring rather than the full status color.
+  - **28+ days** — full confidence, colored by the same Fresh/Ease back/Back off band shown
+    everywhere else in the app (deliberately one risk scale across the whole app, not a second,
+    differently-thresholded one that could disagree with the status pill next to it).
+
 ## Getting started
 
 ### Prerequisites
@@ -380,6 +401,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |
 | GET | `/api/athletes/:id/readiness-history` | Readiness score history |
+| GET | `/api/athletes/:id/stats` | Always-visible session stats + phase-gated workload/ACWR numbers |
 | GET | `/api/brief?week=&year=&squadId=` | Weekly brief, ranked worst-first, roster-scoped |
 | GET | `/api/notes/athlete/:athleteId` | Notes for an athlete |
 | POST | `/api/notes` | Leave a note (coach, must be on the athlete's roster) |

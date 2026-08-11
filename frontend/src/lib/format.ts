@@ -37,3 +37,13 @@ export function formatDuration(minutes: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
+
+// Fractional minutes-per-mile -> "M:SS/mi", the standard pace format --
+// same rounding idea as formatDuration, just without the hours place
+// (paces don't run that slow) and with the "/mi" unit suffix baked in.
+export function formatPace(minPerMile: number): string {
+  const totalSeconds = Math.round(minPerMile * 60);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}/mi`;
+}
