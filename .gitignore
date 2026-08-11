@@ -4,6 +4,10 @@ build/
 .env
 .env.*
 !.env.example
+# Per-developer local permission cache -- ends up logging the literal
+# text of every approved Bash command, which can include credentials
+# passed inline (e.g. DATABASE_URL="..."). Never meant to be shared.
+.claude/settings.local.json
 *.log
 npm-debug.log*
 .DS_Store
