@@ -155,6 +155,10 @@ already exist (409 if it does, race-safe via a DB-level unique constraint on a n
 never by independently typing the same name — that would let anyone claim membership, and the
 whole shared roster that comes with it, with zero consent from anyone already there.
 
+Any member coach can rename their school afterward (`PATCH /api/schools/:id`, "Edit" on the
+**School** tab — e.g. to fix a typo) — same 409-on-collision handling as creating one; renaming to
+the school's own current name is a no-op.
+
 A coach at a school can invite another coach into it (`POST /api/schools/:id/invite-coach`,
 single email — see the **School** tab). This reuses the same `Invite`/token/expiry/email
 machinery as the athlete bulk-invite (`Invite.type: COACH_TO_SCHOOL` instead of `ATHLETE`), and
@@ -449,6 +453,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |
 | POST | `/api/mfa/disable` | Turn off 2FA (requires current password) |
 | POST | `/api/schools` | Self-service: create a school and become its first member (coach only; 409 if the name already exists) |
+| PATCH | `/api/schools/:id` | Rename a school / change its location (member or super admin only; 409 if the new name collides) |
 | GET | `/api/schools/mine` | Your own school (member coaches, shared roster size, pending coach invites) — null if solo |
 | GET | `/api/schools/:id` | A school's detail (member or super admin only) |
 | POST | `/api/schools/:id/invite-coach` | Invite a coach into this school by email (member or super admin only) |

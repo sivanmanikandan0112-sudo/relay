@@ -84,6 +84,43 @@ schoolsRouter.get("/:id", async (req, res) => {
   res.json(detail);
 });
 
+// Same shape as create -- a coach can rename their school (or change its
+// location) after the fact, e.g. to fix a typo. Same collision handling
+// as create: renaming to a name already used by a *different* school is
+// a 409, race-safe via the DB constraint, not just a pre-check. Renaming
+// to the school's own current name is a no-op, not a conflict.
+const updateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  location: z.string().trim().max(120).optional(),
+});
+
+schoolsRouter.patch("/:id", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const parsed = updateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { name, location } = parsed.data;
+
+  try {
+    const school = await prisma.school.update({
+      where: { id: req.params.id },
+      data: { name, nameKey: normalizeKey(name), location },
+    });
+    res.json({ id: school.id, name: school.name, location: school.location });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === "P2002") {
+        return res.status(409).json({ error: "A school with that name already exists." });
+      }
+      if (err.code === "P2025") {
+        return res.status(404).json({ error: "Not found" });
+      }
+    }
+    throw err;
+  }
+});
+
 const inviteCoachSchema = z.object({ email: z.string().trim().email() });
 
 // Invite another coach into *this* school -- only usable by a coach who

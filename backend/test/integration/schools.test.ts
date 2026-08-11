@@ -108,3 +108,67 @@ describe("GET /api/schools/:id", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("PATCH /api/schools/:id", () => {
+  it("a member coach can rename their school", async () => {
+    const school = await ensureSchool("Old Name High");
+    const coach = await createCoach({ username: "coach.rename", firstName: "Rename", lastName: "Coach" });
+    await assignSchool(coach.id, school.id);
+    const token = await loginAs("coach.rename");
+
+    const res = await request(app)
+      .patch(`/api/schools/${school.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "New Name High", location: "Newtown, TX" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: school.id, name: "New Name High", location: "Newtown, TX" });
+
+    const updated = await prisma.school.findUniqueOrThrow({ where: { id: school.id } });
+    expect(updated.nameKey).toBe("new name high");
+  });
+
+  it("403s for a coach who isn't a member of that school", async () => {
+    const school = await ensureSchool("Protected High");
+    await createCoach({ username: "coach.rename.outsider", firstName: "Out", lastName: "Sider" });
+    const token = await loginAs("coach.rename.outsider");
+
+    const res = await request(app)
+      .patch(`/api/schools/${school.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Hijacked High" });
+    expect(res.status).toBe(403);
+
+    const unchanged = await prisma.school.findUniqueOrThrow({ where: { id: school.id } });
+    expect(unchanged.name).toBe("Protected High");
+  });
+
+  it("409s renaming to a name already used by a different school; the original school is untouched", async () => {
+    await ensureSchool("Existing Name High");
+    const school = await ensureSchool("Renaming High");
+    const coach = await createCoach({ username: "coach.renamecollide", firstName: "Coach", lastName: "Collide" });
+    await assignSchool(coach.id, school.id);
+    const token = await loginAs("coach.renamecollide");
+
+    const res = await request(app)
+      .patch(`/api/schools/${school.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "existing name high" }); // different case, same normalized key
+    expect(res.status).toBe(409);
+
+    const unchanged = await prisma.school.findUniqueOrThrow({ where: { id: school.id } });
+    expect(unchanged.name).toBe("Renaming High");
+  });
+
+  it("a super admin can rename a school they don't belong to", async () => {
+    const school = await ensureSchool("Admin Target High");
+    const admin = await createCoach({ username: "coach.renameadmin", firstName: "Admin", lastName: "Coach" });
+    await prisma.user.update({ where: { id: admin.id }, data: { isSuperAdmin: true } });
+    const token = await loginAs("coach.renameadmin");
+
+    const res = await request(app)
+      .patch(`/api/schools/${school.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Renamed By Admin High" });
+    expect(res.status).toBe(200);
+  });
+});

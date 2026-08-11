@@ -118,6 +118,8 @@ export const api = {
   createSchool: (name: string, location?: string) =>
     request<School>("/schools", { method: "POST", body: JSON.stringify({ name, location }) }),
   school: (id: string) => request<SchoolDetail>(`/schools/${id}`),
+  updateSchool: (id: string, name: string, location?: string) =>
+    request<School>(`/schools/${id}`, { method: "PATCH", body: JSON.stringify({ name, location }) }),
   inviteCoachToSchool: (schoolId: string, email: string) =>
     request<{ invite: Invite; emailSent: boolean }>(`/schools/${schoolId}/invite-coach`, {
       method: "POST",

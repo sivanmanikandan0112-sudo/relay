@@ -16,6 +16,12 @@ export function School() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
 
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   function refresh() {
     api.mySchool().then((res) => setSchool(res.school));
   }
@@ -35,6 +41,31 @@ export function School() {
       setCreateError(err instanceof Error ? err.message : "Couldn't create that school");
     } finally {
       setCreating(false);
+    }
+  }
+
+  function startEditing() {
+    if (!school) return;
+    setEditName(school.name);
+    setEditLocation(school.location ?? "");
+    setEditError(null);
+    setEditing(true);
+  }
+
+  async function handleSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!school || !editName.trim()) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await api.updateSchool(school.id, editName.trim(), editLocation.trim() || undefined);
+      updateUser({ schoolName: updated.name });
+      setEditing(false);
+      refresh();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Couldn't update the school");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -117,13 +148,64 @@ export function School() {
   return (
     <section>
       <p className="eyebrow-mono">SCHOOL</p>
-      <h1 className="page-title">{school.name}</h1>
-      <p className="page-subtitle">
-        {school.location ? `${school.location} — ` : ""}
-        {school.coaches.length} coach{school.coaches.length === 1 ? "" : "es"} sharing {school.athleteCount} athlete
-        {school.athleteCount === 1 ? "" : "s"}. Anyone you invite here sees every athlete anyone at this school has
-        ever rostered, and vice versa — not just the athletes they personally invited.
-      </p>
+
+      {editing ? (
+        <div className="panel" style={{ marginTop: 0 }}>
+          <h2>Edit school</h2>
+          <form onSubmit={handleSaveEdit}>
+            <label className="field-hint" style={{ display: "block", marginBottom: 4, color: "var(--text-dim-2)" }}>
+              School name
+            </label>
+            <input
+              className="ath-input"
+              style={{ marginBottom: 12 }}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              autoFocus
+            />
+            <label className="field-hint" style={{ display: "block", marginBottom: 4, color: "var(--text-dim-2)" }}>
+              Location (optional)
+            </label>
+            <input
+              className="ath-input"
+              style={{ marginBottom: 12 }}
+              value={editLocation}
+              onChange={(e) => setEditLocation(e.target.value)}
+              placeholder="Flower Mound, TX"
+            />
+            {editError && (
+              <p className="error" style={{ marginTop: 4 }}>
+                {editError}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn-primary" disabled={editSaving || !editName.trim()} onClick={handleSaveEdit}>
+                {editSaving ? "Saving…" : "Save"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <h1 className="page-title" style={{ margin: 0 }}>
+              {school.name}
+            </h1>
+            <button className="btn-secondary" onClick={startEditing}>
+              Edit
+            </button>
+          </div>
+          <p className="page-subtitle">
+            {school.location ? `${school.location} — ` : ""}
+            {school.coaches.length} coach{school.coaches.length === 1 ? "" : "es"} sharing {school.athleteCount} athlete
+            {school.athleteCount === 1 ? "" : "s"}. Anyone you invite here sees every athlete anyone at this school
+            has ever rostered, and vice versa — not just the athletes they personally invited.
+          </p>
+        </>
+      )}
 
       <div className="panel" style={{ marginTop: 0 }}>
         <h2>Coaches</h2>
