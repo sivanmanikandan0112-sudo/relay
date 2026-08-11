@@ -34,9 +34,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   login: (username: string, password: string) =>
-    request<{ token: string; user: AuthUser }>("/auth/login", {
+    request<{ token: string; user: AuthUser } | { mfaRequired: true; tempToken: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
+    }),
+  mfaVerifyLogin: (tempToken: string, code: string) =>
+    request<{ token: string; user: AuthUser }>("/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ tempToken, code }),
     }),
   forgotPassword: (username: string) =>
     request<{ sent: boolean; devResetToken?: string; devNote?: string }>("/auth/forgot-password", {
@@ -56,6 +61,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+
+  mfaStatus: () => request<{ enabled: boolean; backupCodesRemaining: number }>("/mfa/status"),
+  mfaSetup: () => request<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }>("/mfa/setup", { method: "POST" }),
+  mfaVerifySetup: (code: string) =>
+    request<{ backupCodes: string[] }>("/mfa/verify-setup", { method: "POST", body: JSON.stringify({ code }) }),
+  mfaDisable: (password: string) =>
+    request<{ disabled: boolean }>("/mfa/disable", { method: "POST", body: JSON.stringify({ password }) }),
 
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
@@ -118,6 +130,13 @@ export const api = {
   adminCoachDetail: (id: string) => request<AdminCoachDetail>(`/admin/coaches/${id}`),
   adminSchools: () => request<AdminSchoolSummary[]>("/admin/schools"),
   adminSchoolDetail: (id: string) => request<SchoolDetail>(`/admin/schools/${id}`),
+  adminUsers: (q?: string) => request<AdminUserSummary[]>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  adminUserDetail: (id: string) => request<AdminUserDetail>(`/admin/users/${id}`),
+  adminResetUserPassword: (id: string) =>
+    request<{ sent: boolean; devResetToken?: string; devNote?: string }>(`/admin/users/${id}/reset-password`, {
+      method: "POST",
+    }),
+  adminResetUserMfa: (id: string) => request<{ reset: boolean }>(`/admin/users/${id}/reset-mfa`, { method: "POST" }),
 };
 
 export type Gender = "FEMALE" | "MALE" | "NONBINARY" | "PREFER_NOT_TO_SAY";
@@ -137,6 +156,26 @@ export interface AuthUser {
   schoolId?: string | null;
   schoolName?: string | null;
   isSuperAdmin?: boolean;
+  mfaEnabled?: boolean;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+  role: "COACH" | "ATHLETE";
+  isSuperAdmin: boolean;
+  schoolId: string | null;
+  schoolName: string | null;
+  mfaEnabled: boolean;
+  createdAt: string;
+}
+
+export interface AdminUserDetail extends AdminUserSummary {
+  athletes?: Array<{ id: string; name: string; squadName: "GIRLS" | "BOYS" }>;
+  squadName?: "GIRLS" | "BOYS" | null;
+  coaches?: Array<{ id: string; name: string }>;
 }
 
 export interface Squad {

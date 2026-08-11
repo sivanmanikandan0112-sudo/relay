@@ -3,7 +3,8 @@ import { api, type AuthUser } from "../lib/api";
 
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (username: string, password: string) => Promise<AuthUser>;
+  login: (username: string, password: string) => Promise<AuthUser | { mfaRequired: true; tempToken: string }>;
+  verifyMfa: (tempToken: string, code: string) => Promise<AuthUser>;
   setSession: (token: string, user: AuthUser) => void;
   logout: () => void;
   updateUser: (patch: Partial<AuthUser>) => void;
@@ -27,7 +28,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function login(username: string, password: string) {
-    const { token, user } = await api.login(username, password);
+    const result = await api.login(username, password);
+    if ("mfaRequired" in result) {
+      return result; // caller (Login.tsx) shows the code-entry step next
+    }
+    setSession(result.token, result.user);
+    return result.user;
+  }
+
+  // Completes a two-step MFA login, given the tempToken login() returned.
+  async function verifyMfa(tempToken: string, code: string) {
+    const { token, user } = await api.mfaVerifyLogin(tempToken, code);
     setSession(token, user);
     return user;
   }
@@ -49,7 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  return <AuthContext.Provider value={{ user, login, setSession, logout, updateUser }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, verifyMfa, setSession, logout, updateUser }}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {

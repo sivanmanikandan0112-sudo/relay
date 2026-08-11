@@ -16,7 +16,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: "Missing bearer token" });
   }
   try {
-    req.user = verifyToken(header.slice("Bearer ".length));
+    const payload = verifyToken(header.slice("Bearer ".length));
+    // An MFA temp token proves the password was correct, nothing more --
+    // it must never grant access to an ordinary protected route. Only
+    // the unauthenticated POST /api/auth/mfa/verify endpoint consumes
+    // these (it reads the token from the request body, not this header).
+    if (payload.mfaPending) {
+      return res.status(401).json({ error: "MFA verification required" });
+    }
+    req.user = payload;
     next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });

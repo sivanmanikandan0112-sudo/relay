@@ -23,4 +23,11 @@ export const env = {
   // Used to build links embedded in real emails (reset-password, accept-invite);
   // the frontend origin serving those pages, e.g. "https://relaycoach.app".
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
+
+  // Required for MFA (see lib/crypto.ts) -- not required() here, same
+  // optional-at-boot pattern as resendApiKey, but unlike email there's no
+  // simulate fallback: lib/crypto.ts throws a clear error at the point of
+  // use if this is missing or the wrong length, rather than ever falling
+  // back to storing a TOTP secret insecurely.
+  mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
 };

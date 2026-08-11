@@ -20,6 +20,8 @@ import { AdminCoaches } from "./pages/admin/AdminCoaches";
 import { AdminCoachDetail } from "./pages/admin/AdminCoachDetail";
 import { AdminSchools } from "./pages/admin/AdminSchools";
 import { AdminSchoolDetail } from "./pages/admin/AdminSchoolDetail";
+import { AdminUsers } from "./pages/admin/AdminUsers";
+import { AdminUserDetail } from "./pages/admin/AdminUserDetail";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -89,6 +91,8 @@ export default function App() {
         <Route path="/admin/coaches/:id" element={<AdminCoachDetail />} />
         <Route path="/admin/schools" element={<AdminSchools />} />
         <Route path="/admin/schools/:id" element={<AdminSchoolDetail />} />
+        <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/users/:id" element={<AdminUserDetail />} />
       </Route>
     </Routes>
   );

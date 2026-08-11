@@ -40,6 +40,7 @@ meRouter.get("/", async (req, res) => {
     schoolId: user.schoolId,
     schoolName: user.school?.name ?? null,
     isSuperAdmin: user.isSuperAdmin,
+    mfaEnabled: user.totpEnabled,
   });
 });
 

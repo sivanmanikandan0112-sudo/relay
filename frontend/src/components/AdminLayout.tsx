@@ -5,6 +5,7 @@ const ADMIN_TABS = [
   { to: "/admin", label: "Overview", end: true },
   { to: "/admin/coaches", label: "Coaches" },
   { to: "/admin/schools", label: "Schools" },
+  { to: "/admin/users", label: "Users" },
 ];
 
 // Deliberately its own shell, not a mode of the regular Layout -- this is

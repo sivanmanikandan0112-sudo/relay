@@ -179,6 +179,37 @@ bypass the normal "must already belong to this school" check), but there's no ad
 school-creation action, since that would either create an empty school or auto-join the admin's
 own account as a member just to create one — self-service creation already covers it.
 
+The admin area also has a **Users** tab (`/admin/users`): search every coach and athlete by
+name/username/email, and two account-recovery actions on a user's detail page — "Send password
+reset email" (reuses the same `issueResetToken` helper and email as the self-service forgot-password
+flow — the admin never sees or sets the new password themself) and "Reset 2FA" (clears the target's
+MFA state outright; they can re-enable it from their own My Profile whenever they want). Both notify
+the target when email is configured.
+
+### Two-factor authentication (TOTP)
+
+Optional, self-service, both roles — enabled from **My Profile** (`/profile`). Scan the QR code
+(or enter the key manually) in any TOTP authenticator app (Google Authenticator, Authy, etc.),
+confirm with the 6-digit code it shows, and you're given 10 one-time backup codes (shown once,
+never again — same one-time-visibility convention as a dev-mode reset token or a freshly
+`create-account`'d password). From then on, logging in is two steps: password, then a 6-digit code
+or a backup code.
+
+- **`totpSecretEncrypted`** is AES-256-GCM ciphertext, never the raw secret — see
+  [`lib/crypto.ts`](backend/src/lib/crypto.ts). Requires `MFA_ENCRYPTION_KEY` (64 hex chars / 32
+  bytes, `openssl rand -hex 32`) to be set — unlike email, there's no simulate fallback; setup
+  fails loudly rather than ever storing a secret insecurely.
+- **Backup codes** (`MfaBackupCode`) are generated with `crypto.randomBytes` (not `Math.random()`)
+  through an unbiased 32-character alphabet that excludes visually ambiguous characters
+  (`0`/`O`/`1`/`I`/`L`), and stored bcrypt-hashed. Each works once.
+- **Login** becomes two calls when `totpEnabled`: `POST /api/auth/login` returns
+  `{ mfaRequired: true, tempToken }` (a real session isn't issued yet) instead of a token, and
+  `POST /api/auth/mfa/verify` (public, rate-limited, accepts a TOTP code or a backup code) issues
+  the real session. The `tempToken` is a normal JWT with an extra `mfaPending` claim and a 5-minute
+  expiry — `requireAuth` rejects any token carrying that claim outright, on every ordinary route, so
+  a captured temp token (which only proves the password was correct) can't be used for anything
+  else in the 5 minutes before it expires.
+
 ## Data model
 
 - **Squad** — a roster grouping (Girls, Boys)
@@ -403,8 +434,9 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/auth/login` | Log in with username + password, returns a JWT |
-| POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly |
+| POST | `/api/auth/login` | Log in with username + password. Returns a JWT, or `{mfaRequired, tempToken}` if 2FA is enabled |
+| POST | `/api/auth/mfa/verify` | Complete a two-step login: `{tempToken, code}` (TOTP or backup code) → real JWT (public, rate-limited) |
+| POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly (rate-limited) |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
 | GET | `/api/invite-accept/:token` | Public: look up who invited you, invite type, and (COACH_TO_SCHOOL) whether that email already has an account (no auth) |
 | POST | `/api/invite-accept/:token` | Public: create your account and log in — role/effects depend on invite type (no auth) |
@@ -412,11 +444,17 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach, schoolId/schoolName, isSuperAdmin) |
 | PATCH | `/api/me/gender` | Set your gender (athlete only — also moves you into the matching squad) |
 | PATCH | `/api/me/password` | Change your own password (both roles; requires current password) |
+| GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
+| POST | `/api/mfa/setup` | Generate a pending TOTP secret + QR code (not yet enabled) |
+| POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |
+| POST | `/api/mfa/disable` | Turn off 2FA (requires current password) |
 | POST | `/api/schools` | Self-service: create a school and become its first member (coach only; 409 if the name already exists) |
 | GET | `/api/schools/mine` | Your own school (member coaches, shared roster size, pending coach invites) — null if solo |
 | GET | `/api/schools/:id` | A school's detail (member or super admin only) |
 | POST | `/api/schools/:id/invite-coach` | Invite a coach into this school by email (member or super admin only) |
-| GET | `/api/admin/overview` \| `/coaches` \| `/coaches/:id` \| `/schools` \| `/schools/:id` | Read-only, system-wide (super admin only) |
+| GET | `/api/admin/overview` \| `/coaches` \| `/coaches/:id` \| `/schools` \| `/schools/:id` \| `/users` \| `/users/:id` | Read-only, system-wide, `/users` supports `?q=` search (super admin only) |
+| POST | `/api/admin/users/:id/reset-password` | Send the target a password reset email (super admin only) |
+| POST | `/api/admin/users/:id/reset-mfa` | Clear the target's 2FA state, notify them by email (super admin only) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |
@@ -482,6 +520,7 @@ build/start at its own workspace with `-w`:
 | `RESEND_API_KEY` | No | Unset → password resets and invite emails **simulate** (logged server-side, token/link returned directly in the API response — same dev-friendly behavior as always). Set → they **actually send** through [Resend](https://resend.com) and the token/link stops appearing in API responses. See [`lib/email.ts`](backend/src/lib/email.ts). |
 | `EMAIL_FROM` | No (if using Resend) | e.g. `"Relay <admin@relaycoach.app>"` — the sending domain must be verified in Resend first (see below) |
 | `FRONTEND_URL` | No (if using Resend) | The frontend's public URL, used to build links inside real emails, e.g. `https://relaycoach.app` |
+| `MFA_ENCRYPTION_KEY` | **Yes, before anyone enables 2FA** | 64 hex characters (32 bytes) for AES-256-GCM — generate with `openssl rand -hex 32`. Unlike email, there's no simulate fallback: MFA setup fails with a clear error if this is missing rather than ever storing a TOTP secret insecurely. Use a different key per environment; never commit a real one. |
 
 **Frontend:**
 

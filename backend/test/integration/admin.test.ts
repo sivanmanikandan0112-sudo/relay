@@ -17,7 +17,7 @@ describe("requireSuperAdmin gate", () => {
   it("403s a regular coach on every /api/admin/* route", async () => {
     await createCoach({ username: "coach.regular", firstName: "Regular", lastName: "Coach" });
     const token = await loginAs("coach.regular");
-    for (const path of ["/api/admin/overview", "/api/admin/coaches", "/api/admin/schools"]) {
+    for (const path of ["/api/admin/overview", "/api/admin/coaches", "/api/admin/schools", "/api/admin/users"]) {
       const res = await request(app).get(path).set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(403);
     }
