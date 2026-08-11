@@ -7,6 +7,7 @@ import { Injuries } from "./pages/Injuries";
 import { HowItWorks } from "./pages/HowItWorks";
 import { CoachInvites } from "./pages/CoachInvites";
 import { School } from "./pages/School";
+import { Profile } from "./pages/Profile";
 import { AthleteCheckin } from "./pages/AthleteCheckin";
 import { AthleteRuns } from "./pages/AthleteRuns";
 import { AthleteHowItWorks } from "./pages/AthleteHowItWorks";
@@ -62,6 +63,7 @@ export default function App() {
         }
       >
         <Route index element={<HomeRedirect />} />
+        <Route path="/profile" element={<Profile />} />
 
         <Route path="/brief" element={<RequireRole role="COACH"><Brief /></RequireRole>} />
         <Route path="/dashboard" element={<RequireRole role="COACH"><Dashboard /></RequireRole>} />

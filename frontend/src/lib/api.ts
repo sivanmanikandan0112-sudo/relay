@@ -51,6 +51,11 @@ export const api = {
   me: () => request<AuthUser>("/me"),
   setGender: (gender: Gender) =>
     request<{ gender: Gender }>("/me/gender", { method: "PATCH", body: JSON.stringify({ gender }) }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ changed: boolean }>("/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),

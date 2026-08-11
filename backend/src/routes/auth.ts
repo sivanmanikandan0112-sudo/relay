@@ -1,12 +1,12 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import crypto from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { signToken } from "../lib/auth.js";
 import { getOwnAthleteId } from "../lib/authz.js";
-import { emailEnabled, sendEmail } from "../lib/email.js";
-import { env } from "../lib/env.js";
+import { issueResetToken } from "../lib/passwordReset.js";
+import { hashToken } from "../lib/tokenHash.js";
+import { loginLimiter, forgotPasswordLimiter } from "../lib/rateLimit.js";
 
 export const authRouter = Router();
 
@@ -27,7 +27,7 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", loginLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -73,7 +73,7 @@ authRouter.post("/login", async (req, res) => {
 // so the UI can show a "continue to reset" link directly.
 const forgotSchema = z.object({ username: z.string().min(1) });
 
-authRouter.post("/forgot-password", async (req, res) => {
+authRouter.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   const parsed = forgotSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -86,22 +86,8 @@ authRouter.post("/forgot-password", async (req, res) => {
     return res.json({ sent: true });
   }
 
-  const token = crypto.randomBytes(24).toString("hex");
-  await prisma.passwordResetToken.create({
-    data: { userId: user.id, token, expiresAt: new Date(Date.now() + 30 * 60 * 1000) },
-  });
-  const resetUrl = `${env.frontendUrl}/reset-password?token=${token}`;
-
-  if (emailEnabled) {
-    await sendEmail({
-      to: user.email,
-      subject: "Reset your Relay password",
-      html: `<p>Hi ${user.firstName},</p><p>Click below to reset your Relay password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
-    });
-    return res.json({ sent: true });
-  }
-
-  res.json({ sent: true, devResetToken: token, devNote: "No email provider configured — use this token directly." });
+  const result = await issueResetToken(user, "Reset your Relay password", "You requested a password reset.");
+  res.json(result);
 });
 
 const resetSchema = z.object({
@@ -116,7 +102,7 @@ authRouter.post("/reset-password", async (req, res) => {
   }
   const { token, newPassword } = parsed.data;
 
-  const record = await prisma.passwordResetToken.findUnique({ where: { token } });
+  const record = await prisma.passwordResetToken.findUnique({ where: { token: hashToken(token) } });
   if (!record || record.usedAt || record.expiresAt < new Date()) {
     return res.status(400).json({ error: "Reset link is invalid or expired" });
   }

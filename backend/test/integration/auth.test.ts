@@ -3,6 +3,7 @@ import request from "supertest";
 import { app, loginAs } from "./helpers.js";
 import { createAthlete, createCoach, resetDb, TEST_PASSWORD } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
+import { hashToken } from "../../src/lib/tokenHash.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -87,11 +88,25 @@ describe("POST /api/auth/forgot-password + /api/auth/reset-password", () => {
   it("rejects an expired reset token", async () => {
     const coach = await createCoach({ username: "coach.expired", firstName: "Coach", lastName: "Expired" });
     const expiredToken = "expired-token-123";
+    // Stored hashed, same as the real route does -- sending the raw
+    // token in the request body below is what a real reset link would
+    // contain; this specifically exercises the expiry check, not a
+    // "not found" false-positive from a hash mismatch.
     await prisma.passwordResetToken.create({
-      data: { userId: coach.id, token: expiredToken, expiresAt: new Date(Date.now() - 1000) },
+      data: { userId: coach.id, token: hashToken(expiredToken), expiresAt: new Date(Date.now() - 1000) },
     });
     const res = await request(app).post("/api/auth/reset-password").send({ token: expiredToken, newPassword: "NewPass123!" });
     expect(res.status).toBe(400);
+  });
+
+  it("stores the reset token hashed, not raw", async () => {
+    await createCoach({ username: "coach.hashed", firstName: "Coach", lastName: "Hashed" });
+    const forgot = await request(app).post("/api/auth/forgot-password").send({ username: "coach.hashed" });
+    const rawToken = forgot.body.devResetToken as string;
+
+    const record = await prisma.passwordResetToken.findFirst({ orderBy: { createdAt: "desc" } });
+    expect(record?.token).not.toBe(rawToken);
+    expect(record?.token).toBe(hashToken(rawToken));
   });
 });
 

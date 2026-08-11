@@ -113,7 +113,26 @@ Same story: `/api/auth/forgot-password` generates a real, expiring reset token
 (`PasswordResetToken`). Without a configured email provider, the response returns the token
 directly and the UI shows a "continue to reset" link built from it, instead of emailing it. With
 one configured, it emails the reset link for real and the token never appears in the API response
-at all — returning it there would defeat the point of proving the requester owns that inbox.
+at all — returning it there would defeat the point of proving the requester owns that inbox. The
+token is stored **hashed** (SHA-256, [`lib/tokenHash.ts`](backend/src/lib/tokenHash.ts)) — a DB
+leak alone can't be used to reset anyone's password. (Contrast with an invite's token, which stays
+raw on purpose — invite links are meant to be forwarded/shared; a reset link's whole point is
+proving private inbox ownership.)
+
+### Change password
+
+A signed-in user changes their own password from **My Profile** (`/profile`, both roles) — current
+password required, same as any other sensitive self-service action in this app
+(`PATCH /api/me/password`).
+
+### Rate limiting
+
+`POST /api/auth/login` and `POST /api/auth/forgot-password` are rate-limited per IP
+([`lib/rateLimit.ts`](backend/src/lib/rateLimit.ts), `express-rate-limit`) — 10 login attempts / 5
+password-reset requests per 15 minutes. Automatically skipped when `NODE_ENV=test` (Vitest's own
+default) so the test suite's many real logins aren't affected; active everywhere else, including
+local dev. Requires `app.set("trust proxy", 1)` (exactly one hop — Railway's own edge) for the
+limiter to read the real client IP correctly behind Railway's proxy.
 
 ### Schools — shared roster visibility across a coaching staff
 
@@ -392,6 +411,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | POST | `/api/invite-accept/:token/attach` | Confirm joining a school with an account you already have (authenticated; caller's email must match the invite) |
 | GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach, schoolId/schoolName, isSuperAdmin) |
 | PATCH | `/api/me/gender` | Set your gender (athlete only — also moves you into the matching squad) |
+| PATCH | `/api/me/password` | Change your own password (both roles; requires current password) |
 | POST | `/api/schools` | Self-service: create a school and become its first member (coach only; 409 if the name already exists) |
 | GET | `/api/schools/mine` | Your own school (member coaches, shared roster size, pending coach invites) — null if solo |
 | GET | `/api/schools/:id` | A school's detail (member or super admin only) |

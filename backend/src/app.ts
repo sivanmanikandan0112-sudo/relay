@@ -21,6 +21,12 @@ import { adminRouter } from "./routes/admin.js";
 // process. src/index.ts is the actual dev/prod entrypoint that starts it.
 export const app = express();
 
+// Exactly one hop -- Railway's own edge proxy -- not `true` (which would
+// trust the whole forwarded chain). Required for express-rate-limit to
+// read the real client IP from X-Forwarded-For correctly instead of
+// either throwing or bucketing every visitor under one shared IP.
+app.set("trust proxy", 1);
+
 app.use(cors());
 app.use(express.json());
 

@@ -80,6 +80,9 @@ export function Layout() {
               Admin
             </Link>
           )}
+          <Link to="/profile" className="btn-secondary" style={{ textDecoration: "none" }}>
+            My Profile
+          </Link>
           <div className="user-menu">
             <span className="user-name">
               {user?.name} <span className="user-role">{user?.role === "COACH" ? "Coach" : "Athlete"}</span>

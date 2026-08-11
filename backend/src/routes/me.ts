@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
@@ -80,4 +81,28 @@ meRouter.patch("/gender", requireRole("ATHLETE"), async (req, res) => {
     data: { gender: parsed.data.gender, ...(squadId ? { squadId } : {}) },
   });
   res.json({ gender: parsed.data.gender });
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
+// Both roles -- no requireRole, matching GET / above. Requires the
+// current password (not just being logged in) before setting a new one,
+// same spirit as the athlete gender gate requiring a real answer rather
+// than trusting session state alone for a sensitive change.
+meRouter.patch("/password", async (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
+    return res.status(400).json({ error: "Current password is incorrect" });
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  res.json({ changed: true });
 });
