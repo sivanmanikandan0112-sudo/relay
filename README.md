@@ -100,12 +100,16 @@ real, on top of the copy-link button still being there as a fallback. Either way
 the Invite screen (waiting/accepted) only ever changes as a side effect of a real signup — there
 is no way, in the UI or the API, to set it by hand.
 
-A coach can still **remove** a still-pending invite outright (`DELETE /api/invites/:id`, "Remove
-invite" on the Invite screen — two clicks, the second confirms) if they've decided that person
-shouldn't be invited anymore: the row is deleted, the old link stops working, and the email is
-free to be re-invited later. This is different from setting status by hand — it's not pretending
-a real response happened, it's un-inviting someone. Once an invite is `ACCEPTED`, this route
-refuses (400) — there's a real account and roster relationship behind it by then.
+A coach can **remove** a still-pending invite outright (`DELETE /api/invites/:id`, "Remove invite"
+on the Invite screen — two clicks, the second confirms) if they've decided that person shouldn't
+be invited anymore: the row is deleted, the old link stops working, and the email is free to be
+re-invited later. This is different from setting status by hand — it's not pretending a real
+response happened, it's un-inviting someone.
+
+A coach can also **clear** an already-`ACCEPTED` invite off the same list ("Clear from list" —
+same two-click confirm), once it's just clutter in their invite history. This only deletes the
+`Invite` row itself; the athlete's account and their actual roster spot (`CoachAthlete`) are a
+separate, untouched relationship. `REJECTED` invites aren't clearable from either screen today.
 
 ### Forgot password
 
@@ -494,7 +498,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | DELETE | `/api/training-load/:id` | Delete your own logged run (athlete only) |
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |
 | POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
-| DELETE | `/api/invites/:id` | Remove a still-pending invite (coach only, must be their own; 400 if already accepted/rejected) |
+| DELETE | `/api/invites/:id` | Remove a still-pending invite, or clear an already-accepted one off the list (coach only, must be their own; 400 for a rejected invite) |
 
 ## Deploying
 

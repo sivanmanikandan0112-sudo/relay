@@ -29,6 +29,33 @@ export function AthleteCheckin() {
 
   useEffect(refresh, [athleteId]);
 
+  // Whether today already has a check-in isn't session state -- it's a
+  // fact about the data, so it has to survive a reload or coming back to
+  // this page later, not just live in `submitted` for as long as this
+  // component happens to stay mounted. Multiple check-ins a day are
+  // allowed (each POST creates a new row rather than overwriting), so
+  // this is the *latest* one for today, matching history's own newest-first order.
+  const todayEntry = history.find((h) => new Date(h.date).toDateString() === new Date().toDateString()) ?? null;
+
+  // Once today's entry shows up (on load, or right after a submit),
+  // reflect its real values instead of leaving the sliders at their
+  // neutral 3/3/3/3/3 default -- otherwise re-submitting without
+  // touching anything would silently overwrite an honest rating with a
+  // fake "everything's a 3".
+  useEffect(() => {
+    if (!todayEntry) return;
+    setDraft({
+      sleep: todayEntry.sleep,
+      energy: todayEntry.energy,
+      mood: todayEntry.mood,
+      motivation: todayEntry.motivation,
+      soreness: todayEntry.soreness,
+    });
+    setMsg(todayEntry.msg ?? "");
+    setSubmitted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayEntry?.id]);
+
   // Only fetch if the athlete has opted in from Profile -- the endpoint
   // itself also enforces this, this just avoids a pointless call otherwise.
   useEffect(() => {

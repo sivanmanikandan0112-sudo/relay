@@ -85,19 +85,31 @@ invitesRouter.post("/bulk", async (req, res) => {
 // routes/inviteAccept.ts. Status shown to a coach always reflects
 // whether the invited athlete has actually created their account.
 
-// A coach can still remove a PENDING invite outright -- they've decided
-// they don't want to invite that person anymore, so the token stops
-// working (routes/inviteAccept.ts looks the invite up by row) and the
-// email is free to be re-invited later. Once ACCEPTED, there's a real
-// account and roster relationship behind it, so this route won't touch
-// it -- that's not "removing an invite" anymore.
+// A coach can remove a PENDING invite outright -- they've decided they
+// don't want to invite that person anymore, so the token stops working
+// (routes/inviteAccept.ts looks the invite up by row) and the email is
+// free to be re-invited later.
+//
+// A coach can also clear an ACCEPTED invite off this list -- once
+// accepted, the Invite row is just a historical record of how that
+// person joined, not a live relationship (the real roster link is
+// CoachAthlete, untouched here). This is purely a "dismiss the
+// notification" action: the athlete's account and roster spot are
+// completely unaffected. Safe to allow re-inviting that email afterward,
+// too -- if someone follows a fresh invite link for an email that
+// already has an account, POST /api/invite-accept/:token 409s cleanly
+// rather than letting them touch the existing account.
+//
+// REJECTED is deliberately left out -- rare in practice (only reachable
+// today via a COACH_TO_SCHOOL invite someone declines) and not what was
+// asked for; no route currently clears those.
 invitesRouter.delete("/:id", async (req, res) => {
   const invite = await prisma.invite.findUnique({ where: { id: req.params.id } });
   if (!invite || invite.invitedById !== req.user!.sub) {
     return res.status(404).json({ error: "Not found" });
   }
-  if (invite.status !== "PENDING") {
-    return res.status(400).json({ error: "Only a pending invite can be removed" });
+  if (invite.status !== "PENDING" && invite.status !== "ACCEPTED") {
+    return res.status(400).json({ error: "Only a pending or accepted invite can be removed" });
   }
   await prisma.invite.delete({ where: { id: invite.id } });
   res.status(204).end();

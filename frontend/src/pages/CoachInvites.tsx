@@ -161,9 +161,9 @@ export function CoachInvites() {
                 </div>
                 <div className="run-row" style={{ marginTop: 8 }}>
                   <span className="run-meta">Sent {new Date(inv.createdAt).toLocaleDateString()}</span>
-                  {inv.status === "PENDING" && (
+                  {(inv.status === "PENDING" || inv.status === "ACCEPTED") && (
                     <div style={{ display: "flex", gap: 8 }}>
-                      {!expired && (
+                      {inv.status === "PENDING" && !expired && (
                         <button className="btn-secondary" onClick={() => copyLink(inv)}>
                           {copiedId === inv.id ? "Copied!" : "Copy invite link"}
                         </button>
@@ -177,7 +177,13 @@ export function CoachInvites() {
                         }
                         onBlur={() => setConfirmRemoveId((current) => (current === inv.id ? null : current))}
                       >
-                        {removingId === inv.id ? "Removing…" : confirmRemoveId === inv.id ? "Confirm remove?" : "Remove invite"}
+                        {removingId === inv.id
+                          ? "Removing…"
+                          : confirmRemoveId === inv.id
+                            ? "Confirm remove?"
+                            : inv.status === "ACCEPTED"
+                              ? "Clear from list"
+                              : "Remove invite"}
                       </button>
                     </div>
                   )}
@@ -186,6 +192,12 @@ export function CoachInvites() {
                   <p style={{ color: "var(--text-dim)", fontSize: 11.5, marginTop: 6 }}>
                     This invite link expired {new Date(inv.expiresAt).toLocaleDateString()} — re-invite to get a
                     fresh one.
+                  </p>
+                )}
+                {inv.status === "ACCEPTED" && (
+                  <p style={{ color: "var(--text-dim)", fontSize: 11.5, marginTop: 6 }}>
+                    Clearing this only removes it from your invite history — it doesn't touch their account or
+                    roster spot.
                   </p>
                 )}
               </div>

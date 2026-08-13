@@ -101,7 +101,7 @@ describe("DELETE /api/invites/:id", () => {
     expect(res.status).toBe(404);
   });
 
-  it("refuses to remove an already-accepted invite", async () => {
+  it("removes an already-accepted invite -- it's just history at that point, the roster relationship is untouched", async () => {
     await createCoach({ username: "coach.late", firstName: "Coach", lastName: "Late" });
     const token = await loginAs("coach.late");
     const squad = await ensureSquad("BOYS");
@@ -111,8 +111,9 @@ describe("DELETE /api/invites/:id", () => {
       .send({ username: "already.joined", password: "RealPassword123!", firstName: "Already", lastName: "Joined" });
 
     const res = await request(app).delete(`/api/invites/${invite.id}`).set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(400);
-    expect(await prisma.invite.findUnique({ where: { id: invite.id } })).not.toBeNull();
+    expect(res.status).toBe(204);
+    expect(await prisma.invite.findUnique({ where: { id: invite.id } })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { username: "already.joined" } })).not.toBeNull();
   });
 });
 
