@@ -156,16 +156,14 @@ export function AcceptInvite() {
         <p style={{ color: "var(--text-dim)", margin: 0, fontSize: 13.5 }}>
           {invite.coachName} invited you ({invite.email}) to {joinLabel}. Set up your account below.
         </p>
-        <div style={{ display: "flex", gap: 10 }}>
-          <label style={{ flex: 1 }}>
-            First name
-            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} type="text" autoFocus required />
-          </label>
-          <label style={{ flex: 1 }}>
-            Last name
-            <input value={lastName} onChange={(e) => setLastName(e.target.value)} type="text" required />
-          </label>
-        </div>
+        <label>
+          First name
+          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} type="text" autoFocus required />
+        </label>
+        <label>
+          Last name
+          <input value={lastName} onChange={(e) => setLastName(e.target.value)} type="text" required />
+        </label>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} type="text" required />
