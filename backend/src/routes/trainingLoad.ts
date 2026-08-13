@@ -31,10 +31,16 @@ trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   // Enforce 2 decimal places server-side too, not just in the UI.
   const distanceMiles = parsed.data.distanceMiles != null ? Math.round(parsed.data.distanceMiles * 100) / 100 : undefined;
 
+  // Same shared-clock reasoning as wellness.ts's POST / -- stamp this row
+  // and recompute against one JS-side `now`, instead of racing the DB's
+  // own CURRENT_TIMESTAMP default against a separately-evaluated Node
+  // `new Date()` a moment later (see that file's comment for the failure
+  // mode this avoids).
+  const now = new Date();
   const entry = await prisma.trainingLoad.create({
-    data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin },
+    data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin, date: now },
   });
-  await recomputeReadiness(athleteId);
+  await recomputeReadiness(athleteId, now);
   res.status(201).json(entry);
 });
 

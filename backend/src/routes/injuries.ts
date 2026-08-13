@@ -46,8 +46,12 @@ injuriesRouter.post("/", async (req, res) => {
   if (!(await isCoachOfAthlete(req.user!.sub, parsed.data.athleteId))) {
     return res.status(403).json({ error: "Not your athlete" });
   }
-  const injury = await prisma.injury.create({ data: parsed.data });
-  await recomputeReadiness(parsed.data.athleteId);
+  // Same shared-clock reasoning as wellness.ts's POST / -- see that
+  // file's comment. Here it protects baselineExclusionRanges, which
+  // windows off an injury's own startDate against the recompute's `now`.
+  const now = new Date();
+  const injury = await prisma.injury.create({ data: { ...parsed.data, startDate: now } });
+  await recomputeReadiness(parsed.data.athleteId, now);
   res.status(201).json(injury);
 });
 

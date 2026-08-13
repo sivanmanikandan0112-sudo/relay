@@ -29,8 +29,18 @@ wellnessRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   const athleteId = await getOwnAthleteId(req.user!.sub);
   if (!athleteId) return res.status(403).json({ error: "No athlete profile linked to this account" });
 
-  const entry = await prisma.wellnessEntry.create({ data: { ...parsed.data, athleteId } });
-  await recomputeReadiness(athleteId);
+  // Stamped and recomputed against the same JS-side clock reading,
+  // rather than letting the DB assign `date` via its own CURRENT_TIMESTAMP
+  // default and then recomputing moments later against Node's `new Date()`.
+  // Those are two different clocks -- if the DB host's clock runs even
+  // slightly ahead of the app host's, the just-created row's DB-assigned
+  // timestamp can land *after* the Node-side `now` used as this
+  // recompute's own upper-bound filter, silently excluding this
+  // submission from its own recompute. A shared `now` makes that
+  // impossible by construction.
+  const now = new Date();
+  const entry = await prisma.wellnessEntry.create({ data: { ...parsed.data, athleteId, date: now } });
+  await recomputeReadiness(athleteId, now);
   res.status(201).json(entry);
 });
 
