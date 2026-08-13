@@ -205,6 +205,13 @@ model WellnessEntry {
   athlete    Athlete  @relation(fields: [athleteId], references: [id])
   athleteId  String
   date       DateTime @default(now())
+  // Calendar day (UTC) this check-in belongs to -- see lib/date.ts's
+  // dayKey(). One WellnessEntry per athlete per day, enforced below:
+  // resubmitting the same day overwrites that day's row (an upsert
+  // keyed on athleteId+day in routes/wellness.ts) instead of stacking a
+  // new one, so a coach only ever sees an athlete's *final* answer for a
+  // given day -- in the raw check-in list and in any trend built from it.
+  day        DateTime @db.Date
   sleep      Int // 1-5, quality not hours
   soreness   Int // 1-5
   mood       Int // 1-5
@@ -212,6 +219,7 @@ model WellnessEntry {
   motivation Int // 1-5
   msg        String? // optional free-text note from the athlete
 
+  @@unique([athleteId, day])
   @@index([athleteId, date])
 }
 

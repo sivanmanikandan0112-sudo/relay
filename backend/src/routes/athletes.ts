@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import { canAccessAthlete } from "../lib/authz.js";
 import { computeReadinessBreakdown } from "../lib/scoring.js";
 import { getDataPhase, mean } from "../lib/math.js";
+import { groupByDay } from "../lib/date.js";
 
 export const athletesRouter = Router();
 
@@ -81,9 +82,29 @@ athletesRouter.get("/:id/stats", async (req, res) => {
       avgRpe: loads.length > 0 ? mean(loads.map((l) => l.rpe)) : null,
       avgSleep: wellness.length > 0 ? mean(wellness.map((w) => w.sleep)) : null,
       avgEnergy: wellness.length > 0 ? mean(wellness.map((w) => w.energy)) : null,
-      distanceSeries: distanceLoads.map((l) => ({ date: l.date, distanceMiles: l.distanceMiles })),
-      rpeSeries: loads.map((l) => ({ date: l.date, rpe: l.rpe })),
-      paceSeries: distanceLoads.map((l) => ({ date: l.date, paceMinPerMile: l.durationMin / l.distanceMiles })),
+      // One point per calendar day, not one per logged run -- a two-a-day
+      // still gets logged as two separate TrainingLoad rows (real workouts
+      // worth keeping individually visible elsewhere), but the trend
+      // itself rolls that day up: summed distance, a true weighted pace
+      // (total duration / total distance for the day, not an average of
+      // each run's own pace), and the day's average RPE across every
+      // session logged that day (including distance-less strength work,
+      // same rows rpeSeries already included one-row-at-a-time before).
+      distanceSeries: groupByDay(distanceLoads, (l) => l.date).map(({ day, items }) => ({
+        date: day,
+        distanceMiles: items.reduce((sum, l) => sum + l.distanceMiles, 0),
+      })),
+      rpeSeries: groupByDay(loads, (l) => l.date).map(({ day, items }) => ({
+        date: day,
+        rpe: mean(items.map((l) => l.rpe)),
+      })),
+      paceSeries: groupByDay(distanceLoads, (l) => l.date).map(({ day, items }) => ({
+        date: day,
+        paceMinPerMile: items.reduce((sum, l) => sum + l.durationMin, 0) / items.reduce((sum, l) => sum + l.distanceMiles, 0),
+      })),
+      // Wellness is already at most one row per athlete per day
+      // (WellnessEntry.day's unique constraint, see routes/wellness.ts) --
+      // no aggregation needed here, a direct map is already one point/day.
       sleepSeries: wellness.map((w) => ({ date: w.date, value: w.sleep })),
       energySeries: wellness.map((w) => ({ date: w.date, value: w.energy })),
     },

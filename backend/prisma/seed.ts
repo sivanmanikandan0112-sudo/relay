@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { STATUS_COLOR } from "../src/lib/readiness.js";
 import { recomputeReadiness } from "../src/lib/scoring.js";
+import { dayKey } from "../src/lib/date.js";
 
 const prisma = new PrismaClient();
 
@@ -189,6 +190,7 @@ async function seedWellnessAndLoad(athleteId: string, archetype: Archetype) {
         data: {
           athleteId,
           date: daysAgo(dayOffset),
+          day: dayKey(daysAgo(dayOffset)),
           sleep: jitter(),
           soreness,
           mood: jitter(),

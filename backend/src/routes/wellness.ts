@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { recomputeReadiness } from "../lib/scoring.js";
 import { canAccessAthlete, getOwnAthleteId } from "../lib/authz.js";
+import { dayKey } from "../lib/date.js";
 
 export const wellnessRouter = Router();
 
@@ -39,9 +40,23 @@ wellnessRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   // submission from its own recompute. A shared `now` makes that
   // impossible by construction.
   const now = new Date();
-  const entry = await prisma.wellnessEntry.create({ data: { ...parsed.data, athleteId, date: now } });
+  const day = dayKey(now);
+
+  // One check-in per athlete per day: resubmitting today overwrites
+  // today's row (upsert on the athleteId+day unique constraint, DB-
+  // enforced, race-safe) instead of stacking another entry, so a coach
+  // only ever sees the athlete's *final* answer for a given day -- in
+  // the raw check-in list and in any trend built from it. The pre-check
+  // is only to pick the right status code below; the upsert itself is
+  // what actually guarantees correctness even under a race.
+  const existing = await prisma.wellnessEntry.findUnique({ where: { athleteId_day: { athleteId, day } } });
+  const entry = await prisma.wellnessEntry.upsert({
+    where: { athleteId_day: { athleteId, day } },
+    update: { ...parsed.data },
+    create: { ...parsed.data, athleteId, date: now, day },
+  });
   await recomputeReadiness(athleteId, now);
-  res.status(201).json(entry);
+  res.status(existing ? 200 : 201).json(entry);
 });
 
 wellnessRouter.get("/athlete/:athleteId", async (req, res) => {

@@ -20,6 +20,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { recomputeReadiness } from "../src/lib/scoring.js";
+import { dayKey } from "../src/lib/date.js";
 
 const prisma = new PrismaClient();
 const SEED_PASSWORD = "Relay2026!";
@@ -309,6 +310,7 @@ async function seedAthleteTrainingAndWellness(athleteId: string, placedWeeks: (n
         data: {
           athleteId,
           date: daysAgo(dayOffset),
+          day: dayKey(daysAgo(dayOffset)),
           sleep: jitter(),
           soreness,
           mood: jitter(),

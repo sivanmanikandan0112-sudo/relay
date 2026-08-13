@@ -233,7 +233,10 @@ or a backup code.
 - **PasswordResetToken** — simulated forgot-password flow
 - **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus
   an optional note. An athlete can only ever write their own (the athlete ID comes from the JWT,
-  never the request body), and can check in more than once a day.
+  never the request body). One row per athlete per calendar day (`@@unique([athleteId, day])`) —
+  resubmitting the same day **overwrites** that day's row (`POST /api/wellness` upserts on it)
+  rather than stacking another entry, so a coach only ever sees the athlete's *final* answer for a
+  given day, both in the raw check-in list and in any trend built from it.
 - **TrainingLoad** — a logged run: athlete-entered title, distance in miles (2 decimal places),
   duration (entered as HH:MM:SS, stored as fractional minutes), RPE → session load (RPE ×
   duration). Same self-only rule as check-ins, and same multiple-per-day allowance (split
@@ -292,9 +295,17 @@ same `ReadinessScore` row the coach-facing endpoints already do.
 ### Coach's athlete detail view
 
 Clicking an athlete on Brief or the Board opens a detail drawer showing that athlete's full last 7
-days: every wellness check-in (all 5 fields, color-coded) and every logged run — not a fixed
-number of most-recent rows, so an athlete who checked in or logged runs more than once a day still
-shows everything from the week.
+days: one wellness check-in per day (all 5 fields, color-coded — WellnessEntry is one row per
+athlete per day, see above) and every logged run — not a fixed number of most-recent rows, so an
+athlete who logged more than one run in a day (a two-a-day) still shows every individual run from
+the week.
+
+The distance/pace/RPE trend charts on this same view (`GET /api/athletes/:id/stats`) are
+day-granular too, for the same reason: a two-a-day rolls up into **one point** for that day (summed
+distance, a true weighted pace — total duration over total distance for the day, not an average of
+each run's own pace — and the day's average RPE), rather than one point per individual run. Sleep
+and energy trends don't need any rollup of their own — WellnessEntry's one-row-per-day guarantee
+already means at most one point per day there.
 
 The drawer also has two always-different sections, both backed by
 [`GET /api/athletes/:id/stats`](backend/src/routes/athletes.ts):
@@ -491,7 +502,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/injuries?squadId=&status=` | List injuries, roster-scoped (coach only) |
 | POST | `/api/injuries` | Log an injury (coach, roster-scoped) |
 | PATCH | `/api/injuries/:id` | Update injury status (coach, roster-scoped) |
-| POST | `/api/wellness` | Submit a check-in for yourself (athlete only; recomputes readiness) |
+| POST | `/api/wellness` | Submit a check-in for yourself (athlete only; recomputes readiness) — 201 if today's first, 200 if it overwrote today's existing entry |
 | GET | `/api/wellness/athlete/:athleteId` | Wellness history |
 | POST | `/api/training-load` | Log a run for yourself (athlete only; recomputes readiness) |
 | GET | `/api/training-load/athlete/:athleteId` | Run history |

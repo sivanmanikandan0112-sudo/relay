@@ -4,6 +4,7 @@ import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, daysAgo, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { recomputeReadiness } from "../../src/lib/scoring.js";
+import { dayKey } from "../../src/lib/date.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -36,6 +37,52 @@ describe("POST /api/wellness", () => {
     expect(score!.score).toBeGreaterThanOrEqual(0);
     expect(score!.score).toBeLessThanOrEqual(100);
     expect(["FRESH", "EASE_BACK", "BACK_OFF", "RETURN_PROTOCOL", "INJURED"]).toContain(score!.status);
+  });
+
+  it("a same-day resubmit overwrites today's entry instead of adding another one", async () => {
+    const { athlete } = await createAthlete({ username: "ath.checkin.twice", firstName: "Ath", lastName: "Twice", squad: "GIRLS" });
+    const token = await loginAs("ath.checkin.twice");
+
+    const first = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 });
+    expect(first.status).toBe(201); // brand new day -> created
+
+    const second = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 5, soreness: 1, mood: 5, energy: 5, motivation: 5, msg: "actually feeling great now" });
+    expect(second.status).toBe(200); // same day -> updated, not created
+    expect(second.body.id).toBe(first.body.id); // literally the same row
+
+    // Only one row on file for today, and it reflects the *second*
+    // submission -- not two rows, and not the first (now-stale) answer.
+    const all = await prisma.wellnessEntry.findMany({ where: { athleteId: athlete.id } });
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ sleep: 5, soreness: 1, mood: 5, energy: 5, motivation: 5, msg: "actually feeling great now" });
+
+    // The coach-facing list (and anything built from it) sees exactly one entry for today.
+    const history = await request(app).get(`/api/wellness/athlete/${athlete.id}`).set("Authorization", `Bearer ${token}`);
+    expect(history.body).toHaveLength(1);
+  });
+
+  it("doesn't collide across different athletes on the same day, or across different days for the same athlete", async () => {
+    const { athlete: athleteA } = await createAthlete({ username: "ath.day.a", firstName: "A", lastName: "Ath", squad: "GIRLS" });
+    const { athlete: athleteB } = await createAthlete({ username: "ath.day.b", firstName: "B", lastName: "Ath", squad: "GIRLS" });
+    const tokenA = await loginAs("ath.day.a");
+    const tokenB = await loginAs("ath.day.b");
+
+    await request(app).post("/api/wellness").set("Authorization", `Bearer ${tokenA}`).send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 });
+    const bRes = await request(app).post("/api/wellness").set("Authorization", `Bearer ${tokenB}`).send({ sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 });
+    expect(bRes.status).toBe(201); // a different athlete's same-day submission is unrelated, still a create
+
+    // Backdate athlete A's yesterday manually, then submit "today" for real -- two distinct days, two rows.
+    await prisma.wellnessEntry.create({
+      data: { athleteId: athleteA.id, date: daysAgo(1), day: dayKey(daysAgo(1)), sleep: 2, soreness: 4, mood: 2, energy: 2, motivation: 2 },
+    });
+    const all = await prisma.wellnessEntry.findMany({ where: { athleteId: athleteA.id } });
+    expect(all).toHaveLength(2); // yesterday's backdated row + today's real submission, untouched by each other
   });
 
   it("rejects an out-of-range rating with 400", async () => {
@@ -73,6 +120,7 @@ describe("POST /api/wellness", () => {
       data: strongDays.map((n) => ({
         athleteId: athlete.id,
         date: daysAgo(n),
+        day: dayKey(daysAgo(n)),
         sleep: n % 2 === 0 ? 5 : 4,
         soreness: n % 3 === 0 ? 2 : 1,
         mood: n % 2 === 0 ? 4 : 5,
