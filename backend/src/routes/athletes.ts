@@ -51,9 +51,8 @@ athletesRouter.get("/:id/stats", async (req, res) => {
     return res.status(403).json({ error: "Not your athlete" });
   }
 
-  const [loads, wellness, breakdown] = await Promise.all([
+  const [loads, breakdown] = await Promise.all([
     prisma.trainingLoad.findMany({ where: { athleteId }, orderBy: { date: "asc" } }),
-    prisma.wellnessEntry.findMany({ where: { athleteId }, orderBy: { date: "asc" } }),
     computeReadinessBreakdown(athleteId),
   ]);
 
@@ -80,8 +79,14 @@ athletesRouter.get("/:id/stats", async (req, res) => {
       weeklyDistanceMiles,
       sessionCount: loads.length,
       avgRpe: loads.length > 0 ? mean(loads.map((l) => l.rpe)) : null,
-      avgSleep: wellness.length > 0 ? mean(wellness.map((w) => w.sleep)) : null,
-      avgEnergy: wellness.length > 0 ? mean(wellness.map((w) => w.energy)) : null,
+      // Deliberately no avgSleep/avgEnergy/sleepSeries/energySeries here --
+      // unlike RPE or distance, those are the athlete's own 1-5 subjective
+      // check-in self-ratings, not a real measurement. Averaging a Likert
+      // scale into "4.2/5" implies a precision that isn't there, and it's
+      // a lossier view of the same data than the day-by-day "Check-in
+      // history" table already shown lower in the detail drawer (every
+      // day's real sleep/energy/mood/motivation/soreness, color-coded) --
+      // so that table is the only place a coach sees these numbers.
       // One point per calendar day, not one per logged run -- a two-a-day
       // still gets logged as two separate TrainingLoad rows (real workouts
       // worth keeping individually visible elsewhere), but the trend
@@ -102,11 +107,6 @@ athletesRouter.get("/:id/stats", async (req, res) => {
         date: day,
         paceMinPerMile: items.reduce((sum, l) => sum + l.durationMin, 0) / items.reduce((sum, l) => sum + l.distanceMiles, 0),
       })),
-      // Wellness is already at most one row per athlete per day
-      // (WellnessEntry.day's unique constraint, see routes/wellness.ts) --
-      // no aggregation needed here, a direct map is already one point/day.
-      sleepSeries: wellness.map((w) => ({ date: w.date, value: w.sleep })),
-      energySeries: wellness.map((w) => ({ date: w.date, value: w.energy })),
     },
     workload: {
       daysTracked: breakdown.daysOfHistory,

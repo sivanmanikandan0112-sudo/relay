@@ -303,18 +303,22 @@ the week.
 The distance/pace/RPE trend charts on this same view (`GET /api/athletes/:id/stats`) are
 day-granular too, for the same reason: a two-a-day rolls up into **one point** for that day (summed
 distance, a true weighted pace — total duration over total distance for the day, not an average of
-each run's own pace — and the day's average RPE), rather than one point per individual run. Sleep
-and energy trends don't need any rollup of their own — WellnessEntry's one-row-per-day guarantee
-already means at most one point per day there.
+each run's own pace — and the day's average RPE), rather than one point per individual run.
+
+Sleep and energy deliberately have **no** averaged number or trend chart anywhere in Stats, unlike
+RPE/distance — those are the athlete's own 1–5 subjective check-in self-rating, not a real
+measurement, and averaging a Likert scale into "4.2/5" implies a precision that isn't there. A
+coach only ever sees those numbers through the Check-in History table above (real per-day
+values, color-coded), never collapsed into a stat tile or sparkline.
 
 The drawer also has two always-different sections, both backed by
 [`GET /api/athletes/:id/stats`](backend/src/routes/athletes.ts):
 
 - **Stats** — always visible, no matter how little history exists: season-to-date total distance,
-  average pace, this week's distance, session count, average RPE, average sleep/energy, and small
-  charts (distance-over-time bars, RPE/pace trend lines, sleep/energy sparklines — even a single
-  logged session draws something, not an empty chart). A strength/cross-training session with no
-  distance still counts toward session count and average RPE, just not distance or pace.
+  average pace, this week's distance, session count, average RPE, and small charts (distance-over-time
+  bars, RPE/pace trend lines — even a single logged session draws something, not an empty chart). A
+  strength/cross-training session with no distance still counts toward session count and average
+  RPE, just not distance or pace.
 - **Workload analysis** — the *same* acute/chronic EWMA load, ACWR, and 0–100 risk score the
   readiness pipeline above already computes for every athlete, just surfaced as raw numbers
   instead of only the final rounded status. Phase-gated on how many days of history exist, using

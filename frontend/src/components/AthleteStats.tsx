@@ -29,8 +29,6 @@ export function AthleteStats({ stats }: Props) {
         <StatTile label="THIS WEEK" value={`${stats.weeklyDistanceMiles.toFixed(1)} mi`} />
         <StatTile label="SESSIONS" value={String(stats.sessionCount)} />
         <StatTile label="AVG RPE" value={stats.avgRpe != null ? stats.avgRpe.toFixed(1) : "—"} />
-        <StatTile label="AVG SLEEP" value={stats.avgSleep != null ? `${stats.avgSleep.toFixed(1)} / 5` : "—"} />
-        <StatTile label="AVG ENERGY" value={stats.avgEnergy != null ? `${stats.avgEnergy.toFixed(1)} / 5` : "—"} />
       </div>
 
       {stats.distanceSeries.length > 0 && (
@@ -61,24 +59,11 @@ export function AthleteStats({ stats }: Props) {
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 20, marginTop: 10, flexWrap: "wrap" }}>
-        {stats.sleepSeries.length > 0 && (
-          <div>
-            <div className="drawer-legend" style={{ marginBottom: 4 }}>
-              SLEEP
-            </div>
-            <Sparkline values={stats.sleepSeries.map((s) => s.value)} colorVar="#7fb0d9" width={90} height={22} />
-          </div>
-        )}
-        {stats.energySeries.length > 0 && (
-          <div>
-            <div className="drawer-legend" style={{ marginBottom: 4 }}>
-              ENERGY
-            </div>
-            <Sparkline values={stats.energySeries.map((s) => s.value)} colorVar="#d97fb0" width={90} height={22} />
-          </div>
-        )}
-      </div>
+      {/* No sleep/energy averages or sparklines here on purpose -- those
+          are the athlete's own 1-5 subjective check-in self-ratings, not
+          a real measurement like RPE/distance, so a coach only ever sees
+          them through the day-by-day Check-in History table below,
+          instead of collapsed into an averaged number/trend up here. */}
     </>
   );
 }

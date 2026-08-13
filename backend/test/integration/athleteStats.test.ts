@@ -4,7 +4,6 @@ import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, daysAgo, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { computeReadinessBreakdown } from "../../src/lib/scoring.js";
-import { dayKey } from "../../src/lib/date.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -33,8 +32,6 @@ describe("GET /api/athletes/:id/stats", () => {
       weeklyDistanceMiles: 0,
       sessionCount: 0,
       avgRpe: null,
-      avgSleep: null,
-      avgEnergy: null,
     });
     expect(res.body.workload).toMatchObject({ daysTracked: 0, phase: "building", acuteReady: false, chronicReady: false });
   });
@@ -55,12 +52,6 @@ describe("GET /api/athletes/:id/stats", () => {
     await prisma.trainingLoad.create({
       data: { athleteId: athlete.id, runType: "Strength", distanceMiles: null, durationMin: 45, rpe: 8, load: 360, date: daysAgo(1) },
     });
-    await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, sleep: 6, soreness: 3, mood: 4, energy: 5, motivation: 4, date: daysAgo(2), day: dayKey(daysAgo(2)) },
-    });
-    await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, sleep: 8, soreness: 2, mood: 5, energy: 7, motivation: 5, date: daysAgo(1), day: dayKey(daysAgo(1)) },
-    });
 
     const token = await loginAs("coach.stats.totals");
     const res = await request(app).get(`/api/athletes/${athlete.id}/stats`).set("Authorization", `Bearer ${token}`);
@@ -73,8 +64,8 @@ describe("GET /api/athletes/:id/stats", () => {
     expect(res.body.stats.avgRpe).toBeCloseTo((4 + 6 + 8) / 3, 5); // ...and here...
     expect(res.body.stats.distanceSeries).toHaveLength(2); // ...but not here (distance/pace series exclude it)
     expect(res.body.stats.paceSeries).toHaveLength(2);
-    expect(res.body.stats.avgSleep).toBeCloseTo((6 + 8) / 2, 5);
-    expect(res.body.stats.avgEnergy).toBeCloseTo((5 + 7) / 2, 5);
+    expect(res.body.stats.avgSleep).toBeUndefined(); // no averaged wellness numbers here at all -- see Check-in History instead
+    expect(res.body.stats.avgEnergy).toBeUndefined();
   });
 
   it("rolls up same-day runs (two-a-days) into one trend point each, with a true weighted pace, not one point per run", async () => {

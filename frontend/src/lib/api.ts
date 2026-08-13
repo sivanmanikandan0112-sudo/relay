@@ -216,24 +216,21 @@ export interface PacePoint {
   paceMinPerMile: number;
 }
 
-export interface ValuePoint {
-  date: string;
-  value: number;
-}
-
+// No sleep/energy averages or series here on purpose -- see
+// routes/athletes.ts's comment on GET /:id/stats: those are the
+// athlete's own 1-5 subjective check-in self-ratings, not a real
+// measurement, and a coach only ever sees them through the day-by-day
+// Check-in History table (DetailDrawer.tsx), not averaged into a number
+// here alongside RPE/distance.
 export interface AthleteStats {
   totalDistanceMiles: number;
   avgPaceMinPerMile: number | null;
   weeklyDistanceMiles: number;
   sessionCount: number;
   avgRpe: number | null;
-  avgSleep: number | null;
-  avgEnergy: number | null;
   distanceSeries: DistancePoint[];
   rpeSeries: RpePoint[];
   paceSeries: PacePoint[];
-  sleepSeries: ValuePoint[];
-  energySeries: ValuePoint[];
 }
 
 export type DataPhase = "building" | "partial" | "complete";
