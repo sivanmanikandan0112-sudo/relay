@@ -185,6 +185,12 @@ model Athlete {
   squadId        String
   user           User?            @relation(fields: [userId], references: [id])
   userId         String?          @unique
+  // Self-service, athlete-owned, off by default: the weekly ReadinessScore
+  // is deliberately coach-only otherwise (see AthleteCheckin.tsx's own
+  // copy), since an athlete who can see the number has an incentive to
+  // inflate their daily check-in answers to keep it up. Adjustable anytime
+  // from Profile -- a coach cannot set this on an athlete's behalf.
+  shareReadinessWithAthlete Boolean @default(false)
   wellnessEntries WellnessEntry[]
   trainingLoads  TrainingLoad[]
   readinessScores ReadinessScore[]

@@ -271,6 +271,20 @@ logistic risk score) rather than only the final stored score, run
 `npm run inspect -w backend -- "Maya Okonkwo"` (name or username both work) —
 [`backend/scripts/inspect-athlete.ts`](backend/scripts/inspect-athlete.ts).
 
+### Athlete readiness visibility (self-service, off by default)
+
+The readiness score is coach-only by default — deliberately, so an athlete's daily check-in stays
+an honest answer instead of something to manage toward a number they can see. An athlete can opt in
+to seeing their own current score from **My Profile** (`/profile`), with the tradeoff spelled out
+right there in the toggle's copy, and can switch it back off anytime — a coach cannot set this on an
+athlete's behalf. On, it shows on the athlete's own Check-in page
+([`AthleteCheckin.tsx`](frontend/src/pages/AthleteCheckin.tsx)), same score/status/summary a coach
+sees. Backed by `Athlete.shareReadinessWithAthlete` (`@default(false)`), `PATCH
+/api/me/readiness-visibility` to toggle it, and `GET /api/me/readiness` to read it — the latter
+returns `{shared: false, latest: null}` rather than a 403 when the athlete has opted out, since
+withholding it is their own choice, not an authorization failure. No new computation: both read the
+same `ReadinessScore` row the coach-facing endpoints already do.
+
 ### Coach's athlete detail view
 
 Clicking an athlete on Brief or the Board opens a detail drawer showing that athlete's full last 7
@@ -448,6 +462,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach, schoolId/schoolName, isSuperAdmin) |
 | PATCH | `/api/me/gender` | Set your gender (athlete only — also moves you into the matching squad) |
 | PATCH | `/api/me/password` | Change your own password (both roles; requires current password) |
+| PATCH | `/api/me/readiness-visibility` | Athlete only: opt in/out of seeing your own readiness score |
+| GET | `/api/me/readiness` | Athlete only: your current readiness if you've opted in (`{shared: false, latest: null}` otherwise) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
 | POST | `/api/mfa/setup` | Generate a pending TOTP secret + QR code (not yet enabled) |
 | POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |

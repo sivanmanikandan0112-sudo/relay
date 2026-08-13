@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, type WellnessEntry } from "../lib/api";
+import { api, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
 import { formatShortDate } from "../lib/format";
+import { STATUS_COLOR, STATUS_LABEL, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
 
 const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "soreness"; label: string; hint: string }> = [
@@ -19,6 +20,7 @@ export function AthleteCheckin() {
   const [msg, setMsg] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [readiness, setReadiness] = useState<ReadinessScoreRecord | null>(null);
 
   function refresh() {
     if (!athleteId) return;
@@ -26,6 +28,16 @@ export function AthleteCheckin() {
   }
 
   useEffect(refresh, [athleteId]);
+
+  // Only fetch if the athlete has opted in from Profile -- the endpoint
+  // itself also enforces this, this just avoids a pointless call otherwise.
+  useEffect(() => {
+    if (!user?.readinessShared) {
+      setReadiness(null);
+      return;
+    }
+    api.myReadiness().then((res) => setReadiness(res.latest));
+  }, [user?.readinessShared]);
 
   if (!athleteId) {
     return (
@@ -68,6 +80,33 @@ export function AthleteCheckin() {
         This is the earliest sign of overtraining — how you feel shifts before your times do. It stays
         between you and your coach.
       </p>
+
+      {user?.readinessShared && (
+        <div className="panel" style={{ marginTop: 0, marginBottom: 16 }}>
+          <div className="eyebrow-mono" style={{ marginBottom: 6, color: "#8a97ad" }}>
+            YOUR READINESS
+          </div>
+          {readiness ? (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                {scoreIsMeaningful(readiness.status) && (
+                  <div style={{ fontSize: 32, fontWeight: 700, color: STATUS_COLOR[readiness.status] }}>
+                    {readiness.score}
+                  </div>
+                )}
+                <div style={{ fontSize: 14, fontWeight: 600, color: STATUS_COLOR[readiness.status] }}>
+                  {STATUS_LABEL[readiness.status]}
+                </div>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 4 }}>{readiness.summary}</p>
+            </>
+          ) : (
+            <p className="page-subtitle" style={{ fontSize: 13, margin: 0 }}>
+              Not enough history yet — check back after a couple weeks of check-ins and runs.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="checkin-panel">
         {FIELDS.map((field) => (

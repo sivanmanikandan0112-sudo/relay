@@ -152,6 +152,7 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
       athleteId: athlete.id,
       gender: null,
       hasCoach: true,
+      readinessShared: false,
       schoolId: null,
       schoolName: null,
       isSuperAdmin: false,

@@ -61,6 +61,9 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  setReadinessVisibility: (share: boolean) =>
+    request<{ shared: boolean }>("/me/readiness-visibility", { method: "PATCH", body: JSON.stringify({ share }) }),
+  myReadiness: () => request<{ shared: boolean; latest: ReadinessScoreRecord | null }>("/me/readiness"),
 
   mfaStatus: () => request<{ enabled: boolean; backupCodesRemaining: number }>("/mfa/status"),
   mfaSetup: () => request<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }>("/mfa/setup", { method: "POST" }),
@@ -155,6 +158,7 @@ export interface AuthUser {
   squadId?: string | null;
   gender?: Gender | null;
   hasCoach?: boolean;
+  readinessShared?: boolean;
   schoolId?: string | null;
   schoolName?: string | null;
   isSuperAdmin?: boolean;

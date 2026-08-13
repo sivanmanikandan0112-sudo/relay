@@ -34,9 +34,14 @@ async function buildSession(user: User & { school: School | null }) {
 
   let gender: string | null = null;
   let hasCoach = false;
+  let readinessShared = false;
   if (athleteId) {
-    const athlete = await prisma.athlete.findUnique({ where: { id: athleteId }, select: { gender: true } });
+    const athlete = await prisma.athlete.findUnique({
+      where: { id: athleteId },
+      select: { gender: true, shareReadinessWithAthlete: true },
+    });
     gender = athlete?.gender ?? null;
+    readinessShared = athlete?.shareReadinessWithAthlete ?? false;
     hasCoach = (await prisma.coachAthlete.count({ where: { athleteId } })) > 0;
   }
 
@@ -47,6 +52,7 @@ async function buildSession(user: User & { school: School | null }) {
       athleteId,
       gender,
       hasCoach,
+      readinessShared,
       schoolId: user.schoolId,
       schoolName: user.school?.name ?? null,
       isSuperAdmin: user.isSuperAdmin,

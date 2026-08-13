@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
 export function Profile() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -24,6 +24,10 @@ export function Profile() {
   const [disablePassword, setDisablePassword] = useState("");
   const [disableError, setDisableError] = useState<string | null>(null);
   const [disabling, setDisabling] = useState(false);
+
+  // --- Readiness visibility (athlete-only) ----------------------------
+  const [readinessSaving, setReadinessSaving] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
 
   function refreshMfaStatus() {
     api.mfaStatus().then(setMfaStatus);
@@ -81,6 +85,19 @@ export function Profile() {
       setSetupError(err instanceof Error ? err.message : "Invalid code. Try again.");
     } finally {
       setSetupSubmitting(false);
+    }
+  }
+
+  async function handleToggleReadinessSharing(share: boolean) {
+    setReadinessError(null);
+    setReadinessSaving(true);
+    try {
+      await api.setReadinessVisibility(share);
+      updateUser({ readinessShared: share });
+    } catch (err) {
+      setReadinessError(err instanceof Error ? err.message : "Couldn't save that");
+    } finally {
+      setReadinessSaving(false);
     }
   }
 
@@ -158,6 +175,41 @@ export function Profile() {
           </button>
         </form>
       </div>
+
+      {user?.role === "ATHLETE" && (
+        <div className="panel">
+          <h2>See your own readiness score</h2>
+          <p style={{ color: "var(--text-dim)", fontSize: 13.5 }}>
+            This stays coach-only by default — deliberately, so today's check-in stays an honest answer, not
+            something to manage toward a number. You can turn it on for yourself if you'd rather see it, and turn it
+            back off anytime.
+          </p>
+          <ul style={{ fontSize: 13, color: "var(--text-dim)", paddingLeft: 18, margin: "10px 0", lineHeight: 1.6 }}>
+            <li>
+              <strong>On:</strong> you'll see the same score your coach does on your check-in page — useful if you'd
+              rather understand why they're easing off your training than have it feel out of nowhere.
+            </li>
+            <li>
+              <strong>Off (default):</strong> keeps your check-in honest — nothing to see means nothing to nudge
+              toward. Your coach still sees it and will talk to you about it.
+            </li>
+          </ul>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+            <input
+              type="checkbox"
+              checked={user?.readinessShared ?? false}
+              disabled={readinessSaving}
+              onChange={(e) => handleToggleReadinessSharing(e.target.checked)}
+            />
+            Show me my own readiness score
+          </label>
+          {readinessError && (
+            <p className="error" style={{ marginTop: 8 }}>
+              {readinessError}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="panel">
         <h2>Two-factor authentication</h2>

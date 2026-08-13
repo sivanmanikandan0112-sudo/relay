@@ -17,10 +17,15 @@ meRouter.get("/", async (req, res) => {
   let squadId: string | null = null;
   let gender: string | null = null;
   let hasCoach = false;
+  let readinessShared = false;
   if (athleteId) {
-    const athlete = await prisma.athlete.findUnique({ where: { id: athleteId }, select: { squadId: true, gender: true } });
+    const athlete = await prisma.athlete.findUnique({
+      where: { id: athleteId },
+      select: { squadId: true, gender: true, shareReadinessWithAthlete: true },
+    });
     squadId = athlete?.squadId ?? null;
     gender = athlete?.gender ?? null;
+    readinessShared = athlete?.shareReadinessWithAthlete ?? false;
     const coachCount = await prisma.coachAthlete.count({ where: { athleteId } });
     hasCoach = coachCount > 0;
   }
@@ -37,6 +42,7 @@ meRouter.get("/", async (req, res) => {
     squadId,
     gender,
     hasCoach,
+    readinessShared,
     schoolId: user.schoolId,
     schoolName: user.school?.name ?? null,
     isSuperAdmin: user.isSuperAdmin,
@@ -82,6 +88,50 @@ meRouter.patch("/gender", requireRole("ATHLETE"), async (req, res) => {
     data: { gender: parsed.data.gender, ...(squadId ? { squadId } : {}) },
   });
   res.json({ gender: parsed.data.gender });
+});
+
+const shareReadinessSchema = z.object({ share: z.boolean() });
+
+// Self-service and athlete-owned -- a coach can't set this on an
+// athlete's behalf, only the athlete themself, and only for their own
+// profile (getOwnAthleteId, never a body-supplied athleteId). Off by
+// default (see the schema comment on Athlete.shareReadinessWithAthlete);
+// adjustable back and forth anytime.
+meRouter.patch("/readiness-visibility", requireRole("ATHLETE"), async (req, res) => {
+  const parsed = shareReadinessSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const athleteId = await getOwnAthleteId(req.user!.sub);
+  if (!athleteId) return res.status(403).json({ error: "No athlete profile linked to this account" });
+
+  await prisma.athlete.update({ where: { id: athleteId }, data: { shareReadinessWithAthlete: parsed.data.share } });
+  res.json({ shared: parsed.data.share });
+});
+
+// The athlete's own current readiness, gated on their own preference --
+// {shared: false} rather than a 403 when they've opted out, since this
+// isn't really an authorization failure, it's just their own choice not
+// to look. `latest` is the same ReadinessScore row the coach-facing
+// readiness-history endpoint returns, just read through a self-scoped
+// path (recomputeReadiness already writes it; no new computation here).
+meRouter.get("/readiness", requireRole("ATHLETE"), async (req, res) => {
+  const athleteId = await getOwnAthleteId(req.user!.sub);
+  if (!athleteId) return res.status(403).json({ error: "No athlete profile linked to this account" });
+
+  const athlete = await prisma.athlete.findUniqueOrThrow({
+    where: { id: athleteId },
+    select: { shareReadinessWithAthlete: true },
+  });
+  if (!athlete.shareReadinessWithAthlete) {
+    return res.json({ shared: false, latest: null });
+  }
+
+  const latest = await prisma.readinessScore.findFirst({
+    where: { athleteId },
+    orderBy: [{ year: "desc" }, { week: "desc" }],
+  });
+  res.json({ shared: true, latest });
 });
 
 const changePasswordSchema = z.object({
