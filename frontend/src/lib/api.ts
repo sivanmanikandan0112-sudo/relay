@@ -142,6 +142,9 @@ export const api = {
       method: "POST",
     }),
   adminResetUserMfa: (id: string) => request<{ reset: boolean }>(`/admin/users/${id}/reset-mfa`, { method: "POST" }),
+  adminCheckinActivity: (days = 90) => request<DailyActivityPoint[]>(`/admin/activity/checkins?days=${days}`),
+  adminRunActivity: (days = 90) => request<DailyActivityPoint[]>(`/admin/activity/runs?days=${days}`),
+  adminCoachLoginActivity: (days = 90) => request<DailyActivityPoint[]>(`/admin/activity/coach-logins?days=${days}`),
 };
 
 export type Gender = "FEMALE" | "MALE" | "NONBINARY" | "PREFER_NOT_TO_SAY";
@@ -376,6 +379,13 @@ export interface AdminOverview {
   coachCount: number;
   athleteCount: number;
   soloCoachCount: number;
+}
+
+// One point per calendar day, zero-filled -- see routes/admin.ts's
+// activity endpoints and components/ContributionCalendar.tsx.
+export interface DailyActivityPoint {
+  date: string;
+  count: number;
 }
 
 export interface AdminCoachSummary {

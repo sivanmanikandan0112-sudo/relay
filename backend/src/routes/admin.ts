@@ -6,6 +6,7 @@ import { getCoachAthleteIds, getSchoolAthleteIds } from "../lib/authz.js";
 import { getSchoolDetail } from "../lib/schoolDetail.js";
 import { issueResetToken } from "../lib/passwordReset.js";
 import { emailEnabled, sendEmail } from "../lib/email.js";
+import { dayKey, groupByDay } from "../lib/date.js";
 
 // System-wide, read-only view across every school/coach/athlete --
 // gated on isSuperAdmin (folded into the JWT, see lib/auth.ts), not any
@@ -215,4 +216,79 @@ adminRouter.post("/users/:id/reset-mfa", async (req, res) => {
   }
 
   res.json({ reset: true });
+});
+
+// --- Activity calendars (GitHub-contribution-graph style) --------------
+// Three independent, system-wide daily counts for the admin's activity
+// tab: distinct athletes who checked in, distinct athletes who logged a
+// run, and distinct coaches who logged in -- each expressed as one
+// {date, count} point per day over a rolling window, zero-filled so the
+// frontend can draw a full, gapless grid regardless of how sparse the
+// real data is.
+
+const activityQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(400).default(90) });
+
+/** {dayKey timestamp -> count} to a zero-filled, oldest-first array covering exactly `days` days through today. */
+function zeroFilledDailyCounts(counts: Map<number, number>, days: number, now: Date): Array<{ date: string; count: number }> {
+  const start = dayKey(new Date(now.getTime() - (days - 1) * 86400000));
+  const out: Array<{ date: string; count: number }> = [];
+  for (let i = 0; i < days; i++) {
+    const day = new Date(start.getTime() + i * 86400000);
+    out.push({ date: day.toISOString().slice(0, 10), count: counts.get(day.getTime()) ?? 0 });
+  }
+  return out;
+}
+
+// Checked in -- WellnessEntry is already at most one row per athlete per
+// day (see routes/wellness.ts), so a plain per-day row count already
+// equals "distinct athletes who checked in", no de-duping needed here.
+adminRouter.get("/activity/checkins", async (req, res) => {
+  const parsed = activityQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { days } = parsed.data;
+  const now = new Date();
+  const start = new Date(now.getTime() - days * 86400000);
+
+  const entries = await prisma.wellnessEntry.findMany({ where: { date: { gte: start, lte: now } }, select: { date: true } });
+  const counts = new Map<number, number>();
+  for (const { day, items } of groupByDay(entries, (e) => e.date)) counts.set(day.getTime(), items.length);
+  res.json(zeroFilledDailyCounts(counts, days, now));
+});
+
+// Logged a run -- TrainingLoad deliberately allows more than one row per
+// athlete per day (two-a-days), so this counts *distinct athletes*, not
+// raw run rows -- a two-a-day shouldn't make a day look like two people
+// were active when it was one.
+adminRouter.get("/activity/runs", async (req, res) => {
+  const parsed = activityQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { days } = parsed.data;
+  const now = new Date();
+  const start = new Date(now.getTime() - days * 86400000);
+
+  const loads = await prisma.trainingLoad.findMany({ where: { date: { gte: start, lte: now } }, select: { date: true, athleteId: true } });
+  const counts = new Map<number, number>();
+  for (const { day, items } of groupByDay(loads, (l) => l.date)) {
+    counts.set(day.getTime(), new Set(items.map((l) => l.athleteId)).size);
+  }
+  res.json(zeroFilledDailyCounts(counts, days, now));
+});
+
+// Coach logged in -- LoginEvent is already at most one row per user per
+// day (upserted in routes/auth.ts's buildSession), so again a plain
+// per-day row count already equals "distinct coaches who logged in".
+adminRouter.get("/activity/coach-logins", async (req, res) => {
+  const parsed = activityQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { days } = parsed.data;
+  const now = new Date();
+  const start = new Date(now.getTime() - days * 86400000);
+
+  const events = await prisma.loginEvent.findMany({
+    where: { role: "COACH", day: { gte: start, lte: now } },
+    select: { day: true },
+  });
+  const counts = new Map<number, number>();
+  for (const { day, items } of groupByDay(events, (e) => e.day)) counts.set(day.getTime(), items.length);
+  res.json(zeroFilledDailyCounts(counts, days, now));
 });

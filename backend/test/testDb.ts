@@ -25,6 +25,7 @@ async function testPasswordHashCached(): Promise<string> {
  * targeted per-test cleanup.
  */
 export async function resetDb(): Promise<void> {
+  await prisma.loginEvent.deleteMany();
   await prisma.mfaBackupCode.deleteMany();
   await prisma.passwordResetToken.deleteMany();
   await prisma.invite.deleteMany();

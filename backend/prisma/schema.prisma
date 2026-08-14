@@ -81,7 +81,26 @@ model User {
   coachAthletes CoachAthlete[]
   invitesSent   Invite[]
   resetTokens   PasswordResetToken[]
+  loginEvents   LoginEvent[]
   createdAt     DateTime  @default(now())
+}
+
+// One row per user per day (upserted in routes/auth.ts's buildSession --
+// the single chokepoint both the plain-login and MFA-verify-completion
+// paths already share), feeding the super admin's activity calendars.
+// role is denormalized so the coach-logins calendar can filter/group
+// without joining User. Nothing else in the app reads this table --
+// pure activity-tracking, not part of auth itself.
+model LoginEvent {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  role      Role
+  day       DateTime @db.Date // UTC calendar day, see lib/date.ts's dayKey()
+  createdAt DateTime @default(now())
+
+  @@unique([userId, day])
+  @@index([role, day])
 }
 
 // One-time-use MFA recovery codes, issued 10 at a time when MFA setup is

@@ -9,6 +9,7 @@ import { issueResetToken } from "../lib/passwordReset.js";
 import { hashToken } from "../lib/tokenHash.js";
 import { decrypt } from "../lib/crypto.js";
 import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter } from "../lib/rateLimit.js";
+import { dayKey } from "../lib/date.js";
 import type { User, School } from "@prisma/client";
 
 export const authRouter = Router();
@@ -30,6 +31,19 @@ function publicUser(user: { id: string; username: string; email: string; firstNa
 // two-step one -- the frontend's setSession() treats either identically.
 async function buildSession(user: User & { school: School | null }) {
   const token = signToken({ sub: user.id, role: user.role, isSuperAdmin: user.isSuperAdmin });
+
+  // One row per user per day for the super admin's activity calendars
+  // (routes/admin.ts) -- upserted, not created fresh each time, so a
+  // user logging in five times today is still just one day of activity,
+  // not five. Both real-session paths that call buildSession (plain
+  // login and MFA-verify completion) get this for free from here.
+  const day = dayKey(new Date());
+  await prisma.loginEvent.upsert({
+    where: { userId_day: { userId: user.id, day } },
+    update: {},
+    create: { userId: user.id, role: user.role, day },
+  });
+
   const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
 
   let gender: string | null = null;

@@ -103,6 +103,14 @@ describe("two-phase login with MFA enabled", () => {
 
     const me = await request(app).get("/api/me").set("Authorization", `Bearer ${verify.body.token}`);
     expect(me.status).toBe(200);
+
+    // The MFA-verify completion path shares buildSession with plain login
+    // (see routes/auth.ts) -- it should get a LoginEvent recorded too, not
+    // just plain (no-MFA) logins.
+    const user = await prisma.user.findUniqueOrThrow({ where: { username: "coach.mfa.completelogin" } });
+    const loginEvent = await prisma.loginEvent.findFirst({ where: { userId: user.id } });
+    expect(loginEvent).not.toBeNull();
+    expect(loginEvent!.role).toBe("COACH");
   });
 
   it("wrong TOTP code -> 401", async () => {

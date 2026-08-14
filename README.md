@@ -194,6 +194,30 @@ flow — the admin never sees or sets the new password themself) and "Reset 2FA"
 MFA state outright; they can re-enable it from their own My Profile whenever they want). Both notify
 the target when email is configured.
 
+An **Activity** tab (`/admin/activity`) shows three independent, system-wide, GitHub-contribution-
+graph-style calendars over a rolling 90 days — `components/ContributionCalendar.tsx`, no charting
+library, same "just inline-styled squares" spirit as `BarChart.tsx`/`Sparkline.tsx`. Each is a
+distinct-people-active count, not a raw event count, so none of them get inflated by someone doing
+the same thing more than once in a day:
+
+- **Athlete check-ins** — distinct athletes who submitted a check-in that day. WellnessEntry is
+  already at most one row per athlete per day (see above), so this is a plain per-day row count.
+- **Athlete runs** — distinct athletes who logged *at least one* run that day. TrainingLoad
+  deliberately allows more than one row per athlete per day (two-a-days), so this one actually
+  de-dupes by athlete rather than counting rows.
+- **Coach logins** — distinct coaches who logged in that day. Backed by a new `LoginEvent` table
+  (one row per user per day, upserted — see below), filtered to `role: COACH`.
+
+`LoginEvent` is written from `buildSession()` in [`routes/auth.ts`](backend/src/routes/auth.ts) —
+the one function both the plain-login and MFA-verify-completion paths already share, so both real
+ways to end up with a session get recorded from a single call site. It's pure activity-tracking:
+nothing else in the app reads this table, and it plays no role in auth itself. All three endpoints
+(`GET /api/admin/activity/{checkins,runs,coach-logins}?days=`) zero-fill the full window so the
+frontend always draws a complete, gapless grid — a quiet day is a real `{count: 0}` point, not a
+missing one. Color intensity is relative to the busiest day *in that window*, same as GitHub's own
+scaling — there's no single fixed scale that would mean the same thing across three very different
+metrics.
+
 ### Two-factor authentication (TOTP)
 
 Optional, self-service, both roles — enabled from **My Profile** (`/profile`). Scan the QR code
@@ -517,6 +541,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/admin/overview` \| `/coaches` \| `/coaches/:id` \| `/schools` \| `/schools/:id` \| `/users` \| `/users/:id` | Read-only, system-wide, `/users` supports `?q=` search (super admin only) |
 | POST | `/api/admin/users/:id/reset-password` | Send the target a password reset email (super admin only) |
 | POST | `/api/admin/users/:id/reset-mfa` | Clear the target's 2FA state, notify them by email (super admin only) |
+| GET | `/api/admin/activity/checkins` \| `/runs` \| `/coach-logins` | Zero-filled daily activity counts, `?days=` (default 90, max 400) (super admin only) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |
