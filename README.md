@@ -243,7 +243,11 @@ or a backup code.
   workouts, two-a-days). The athlete confirms a summary of the run before it's saved.
 - **ReadinessScore** — a weekly snapshot: score (0–100) + status. Recomputed automatically
   whenever an athlete submits a check-in, logs a run, deletes a run, or their injury status
-  changes — see [`lib/scoring.ts`](backend/src/lib/scoring.ts).
+  changes — see [`lib/scoring.ts`](backend/src/lib/scoring.ts). Also snapshots
+  `daysOfHistory` — how much history the athlete had on file *at the moment that score was
+  computed* (not re-derived later from today's day-count) — purely so the UI can show a "still
+  settling in" caveat on a new athlete's number without it silently reading as confident;
+  doesn't change the score itself. See [Data confidence](#data-confidence) below.
 - **Injury** — tracked per athlete with status (`ACTIVE` / `RECOVERING` / `RESOLVED`)
 - **Note** — a coach's check-in note left on an athlete
 
@@ -277,6 +281,24 @@ number the pipeline produces for a real seeded athlete (EWMA load, each z-score,
 logistic risk score) rather than only the final stored score, run
 `npm run inspect -w backend -- "Maya Okonkwo"` (name or username both work) —
 [`backend/scripts/inspect-athlete.ts`](backend/scripts/inspect-athlete.ts).
+
+### Data confidence
+
+A readiness score is real math the moment an athlete has *any* history — but it's noisier for a
+brand-new athlete than it will be once the pipeline has settled. Two thresholds, both already
+load-bearing elsewhere in the pipeline, not invented for this: `MIN_HISTORY_DAYS` (14 — below
+this the z-score pipeline has no signal at all yet, so the stored score is a flat neutral default,
+not a real read on the athlete) and `CHRONIC_WINDOW_DAYS` (28 — the chronic-load EWMA's own window;
+below this the score is real but hasn't fully settled). `ReadinessScore.daysOfHistory` snapshots
+which of these applied *at the time* a given week's score was computed (see above), and
+[`lib/status.ts`](frontend/src/lib/status.ts)'s `dataConfidence()` turns that into a small amber
+"⚠" caveat everywhere a score is shown — a tooltip badge on Brief/the Board where space is tight,
+a full sentence on the coach's detail-drawer header and the athlete's own opt-in readiness card
+where there's room. Once `daysOfHistory >= 28`, `dataConfidence()` returns nothing — no caveat, the
+number is fully trusted. This is a separate, score-level version of the same display-confidence
+idea `getDataPhase`/`WorkloadAnalysis.tsx` already applied to the raw ACWR/risk numbers further
+down the same drawer — that one's still there too, unchanged; this one covers the headline number
+those numbers don't.
 
 ### Athlete readiness visibility (self-service, off by default)
 

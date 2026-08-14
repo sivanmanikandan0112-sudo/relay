@@ -1,12 +1,11 @@
 import type { Workload } from "../lib/api";
-import { STATUS_COLOR } from "../lib/status";
+import { CHRONIC_WINDOW_DAYS, STATUS_COLOR } from "../lib/status";
 
 interface Props {
   workload: Workload;
 }
 
 const ACUTE_WINDOW_DAYS = 7;
-const CHRONIC_WINDOW_DAYS = 28;
 
 // Section 2 -- phase-gated, unlike AthleteStats.tsx right above this.
 // The three phases here are a purely display-confidence layer on top of

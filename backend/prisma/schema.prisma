@@ -246,6 +246,16 @@ model ReadinessScore {
   score       Int // 0-100
   status      ReadinessStatus
   summary     String
+  // Snapshot of the athlete's days-of-history *at the moment this score was
+  // computed* (lib/scoring.ts's computeReadinessBreakdown, floored) -- not
+  // re-derived later from today's day-count, so a coach scrolling an
+  // athlete's trend sees each past week's real confidence level instead of
+  // every week retroactively relabeling itself "complete" the day the
+  // athlete crosses the 28-day chronic window. Nullable: rows written
+  // before this column existed simply don't get a confidence badge, rather
+  // than a guessed value. See lib/status.ts's dataConfidence() (frontend)
+  // and lib/math.ts's MIN_HISTORY_DAYS/CHRONIC_WINDOW_DAYS (backend).
+  daysOfHistory Int?
   createdAt   DateTime        @default(now())
 
   @@unique([athleteId, week, year])

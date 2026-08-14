@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api, type ReadinessScore, type Squad } from "../lib/api";
-import { STATUS_LABEL, STATUS_COLOR } from "../lib/status";
+import { STATUS_LABEL, STATUS_COLOR, dataConfidence } from "../lib/status";
 import { Sparkline } from "../components/Sparkline";
 import { DetailDrawer } from "../components/DetailDrawer";
 import { NoteModal } from "../components/NoteModal";
@@ -81,6 +81,7 @@ export function Brief() {
       <div className="brief-list">
         {briefList.map((s, i) => {
           const color = STATUS_COLOR[s.status];
+          const confidence = dataConfidence(s.daysOfHistory);
           return (
             <article className="brief-card" key={s.id}>
               <div
@@ -110,6 +111,11 @@ export function Brief() {
                     </div>
                   </div>
                 </div>
+                {confidence && (
+                  <div className="brief-plain" style={{ color: confidence.color, fontSize: 11.5 }} title={confidence.detail}>
+                    ⚠ {confidence.label === "Building" ? confidence.label : `Settling in — ${confidence.label}`}
+                  </div>
+                )}
                 <div className="brief-plain">{s.summary}</div>
                 <div className="brief-actions">
                   <button className="btn-primary" onClick={() => setNoteFor({ id: s.athleteId, name: s.athlete.name })}>

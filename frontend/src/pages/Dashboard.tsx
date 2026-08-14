@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api, type ReadinessScore, type Squad } from "../lib/api";
-import { STATUS_LABEL, STATUS_COLOR, scoreIsMeaningful } from "../lib/status";
+import { STATUS_LABEL, STATUS_COLOR, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { initials } from "../lib/format";
 import { DetailDrawer } from "../components/DetailDrawer";
 import { NoteModal } from "../components/NoteModal";
@@ -87,6 +87,7 @@ export function Dashboard() {
         {scores.map((s) => {
           const color = STATUS_COLOR[s.status];
           const t = trend(s.athlete.readinessScores.map((r) => r.score));
+          const confidence = dataConfidence(s.daysOfHistory);
           return (
             <div className="lane" key={s.id}>
               <div
@@ -110,6 +111,11 @@ export function Dashboard() {
                         {s.score}
                       </span>
                       <span className="lbl">READY</span>
+                      {confidence && (
+                        <span style={{ color: confidence.color, fontSize: 12, marginLeft: 2 }} title={confidence.detail}>
+                          ⚠
+                        </span>
+                      )}
                     </div>
                   )}
                   <span className="lane-status-label" style={{ color }}>

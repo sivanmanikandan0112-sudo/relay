@@ -192,10 +192,11 @@ export async function computeReadinessBreakdown(athleteId: string, now: Date = n
 export async function recomputeReadiness(athleteId: string, now: Date = new Date()): Promise<void> {
   const b = await computeReadinessBreakdown(athleteId, now);
   const { week, year } = currentIsoWeek(now);
+  const daysOfHistory = Math.floor(b.daysOfHistory);
 
   await prisma.readinessScore.upsert({
     where: { athleteId_week_year: { athleteId, week, year } },
-    update: { score: b.score, status: b.status, summary: b.summary },
-    create: { athleteId, week, year, score: b.score, status: b.status, summary: b.summary },
+    update: { score: b.score, status: b.status, summary: b.summary, daysOfHistory },
+    create: { athleteId, week, year, score: b.score, status: b.status, summary: b.summary, daysOfHistory },
   });
 }

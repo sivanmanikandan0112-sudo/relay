@@ -3,7 +3,7 @@ import request from "supertest";
 import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, daysAgo, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
-import { recomputeReadiness } from "../../src/lib/scoring.js";
+import { computeReadinessBreakdown, recomputeReadiness } from "../../src/lib/scoring.js";
 import { dayKey } from "../../src/lib/date.js";
 
 beforeEach(async () => {
@@ -37,6 +37,39 @@ describe("POST /api/wellness", () => {
     expect(score!.score).toBeGreaterThanOrEqual(0);
     expect(score!.score).toBeLessThanOrEqual(100);
     expect(["FRESH", "EASE_BACK", "BACK_OFF", "RETURN_PROTOCOL", "INJURED"]).toContain(score!.status);
+  });
+
+  it("snapshots daysOfHistory on the stored score, and it flows through the API", async () => {
+    const { athlete } = await createAthlete({ username: "ath.checkin.days", firstName: "Ath", lastName: "Days", squad: "GIRLS" });
+    const coach = await createCoach({ username: "coach.checkin.days", firstName: "Coach", lastName: "Days" });
+    await assignRoster(coach.id, athlete.id);
+    const token = await loginAs("ath.checkin.days");
+
+    // 20 days of backdated history, then a real submission today -- daysOfHistory should
+    // reflect the real span from the oldest entry through today, same as the pipeline itself.
+    for (let n = 20; n >= 1; n--) {
+      await prisma.wellnessEntry.create({
+        data: { athleteId: athlete.id, date: daysAgo(n), day: dayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      });
+    }
+    await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 });
+
+    const breakdown = await computeReadinessBreakdown(athlete.id);
+    const stored = await latestScore(athlete.id);
+    expect(stored!.daysOfHistory).toBe(Math.floor(breakdown.daysOfHistory));
+    expect(stored!.daysOfHistory).toBeGreaterThanOrEqual(20);
+
+    // The stored snapshot flows straight through the API -- no route-specific
+    // logic needed, it's just another column on the same ReadinessScore row.
+    const coachToken = await loginAs("coach.checkin.days");
+    const history = await request(app)
+      .get(`/api/athletes/${athlete.id}/readiness-history`)
+      .set("Authorization", `Bearer ${coachToken}`);
+    expect(history.status).toBe(200);
+    expect(history.body[history.body.length - 1].daysOfHistory).toBe(stored!.daysOfHistory);
   });
 
   it("a same-day resubmit overwrites today's entry instead of adding another one", async () => {

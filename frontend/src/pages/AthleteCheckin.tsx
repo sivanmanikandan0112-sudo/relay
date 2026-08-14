@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
 import { formatShortDate } from "../lib/format";
-import { STATUS_COLOR, STATUS_LABEL, scoreIsMeaningful } from "../lib/status";
+import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
 
 const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "soreness"; label: string; hint: string }> = [
@@ -126,6 +126,15 @@ export function AthleteCheckin() {
                 </div>
               </div>
               <p style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 4 }}>{readiness.summary}</p>
+              {scoreIsMeaningful(readiness.status) &&
+                (() => {
+                  const confidence = dataConfidence(readiness.daysOfHistory);
+                  return (
+                    confidence && (
+                      <p style={{ fontSize: 12, color: confidence.color, marginTop: 6 }}>⚠ {confidence.detail}</p>
+                    )
+                  );
+                })()}
             </>
           ) : (
             <p className="page-subtitle" style={{ fontSize: 13, margin: 0 }}>

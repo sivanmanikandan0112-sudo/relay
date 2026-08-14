@@ -8,7 +8,7 @@ import {
   type Run,
   type WellnessEntry,
 } from "../lib/api";
-import { STATUS_COLOR, STATUS_LABEL, scoreIsMeaningful } from "../lib/status";
+import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
 import { AthleteStats } from "./AthleteStats";
@@ -56,6 +56,7 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
   }
 
   const statusColor = latest ? STATUS_COLOR[latest.status] : "#4ea373";
+  const confidence = latest ? dataConfidence(latest.daysOfHistory) : null;
   const lastWeekWellness = wellness.filter((w) => withinLastDays(w.date, 7));
   const lastWeekRuns = runs.filter((r) => withinLastDays(r.date, 7));
   const messages = lastWeekWellness.filter((w) => w.msg);
@@ -105,6 +106,12 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
               </div>
             </div>
           </div>
+
+          {latest && scoreIsMeaningful(latest.status) && confidence && (
+            <div className="drawer-legend" style={{ color: confidence.color, marginTop: -6, marginBottom: 8 }}>
+              ⚠ {confidence.detail}
+            </div>
+          )}
 
           {athleteStats && <AthleteStats stats={athleteStats.stats} />}
           {athleteStats && <WorkloadAnalysis workload={athleteStats.workload} />}

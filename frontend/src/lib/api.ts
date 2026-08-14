@@ -260,6 +260,10 @@ export interface ReadinessScoreRecord {
   score: number;
   status: ReadinessStatus;
   summary: string;
+  // Days of history the athlete had on file when this score was computed
+  // (snapshotted then, not re-derived from today) -- null for scores
+  // computed before this was tracked. See lib/status.ts's dataConfidence().
+  daysOfHistory: number | null;
 }
 
 export interface ReadinessScore extends ReadinessScoreRecord {
