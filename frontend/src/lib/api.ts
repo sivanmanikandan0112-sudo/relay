@@ -38,6 +38,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  signup: (input: { username: string; email: string; password: string; firstName: string; lastName: string }) =>
+    request<{ token: string; user: AuthUser }>("/auth/signup", { method: "POST", body: JSON.stringify(input) }),
+  loginWithGoogle: (idToken: string) =>
+    request<{ token: string; user: AuthUser } | { mfaRequired: true; tempToken: string }>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ idToken }),
+    }),
   mfaVerifyLogin: (tempToken: string, code: string) =>
     request<{ token: string; user: AuthUser }>("/auth/mfa/verify", {
       method: "POST",
@@ -64,6 +71,8 @@ export const api = {
   setReadinessVisibility: (share: boolean) =>
     request<{ shared: boolean }>("/me/readiness-visibility", { method: "PATCH", body: JSON.stringify({ share }) }),
   myReadiness: () => request<{ shared: boolean; latest: ReadinessScoreRecord | null }>("/me/readiness"),
+  linkGoogle: (idToken: string) => request<{ linked: boolean }>("/me/google-link", { method: "POST", body: JSON.stringify({ idToken }) }),
+  unlinkGoogle: () => request<{ linked: boolean }>("/me/google-link", { method: "DELETE" }),
 
   mfaStatus: () => request<{ enabled: boolean; backupCodesRemaining: number }>("/mfa/status"),
   mfaSetup: () => request<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }>("/mfa/setup", { method: "POST" }),
@@ -166,6 +175,7 @@ export interface AuthUser {
   schoolName?: string | null;
   isSuperAdmin?: boolean;
   mfaEnabled?: boolean;
+  googleLinked?: boolean;
 }
 
 export interface AdminUserSummary {

@@ -4,6 +4,7 @@ import { api, type AuthUser } from "../lib/api";
 interface AuthContextValue {
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<AuthUser | { mfaRequired: true; tempToken: string }>;
+  loginWithGoogle: (idToken: string) => Promise<AuthUser | { mfaRequired: true; tempToken: string }>;
   verifyMfa: (tempToken: string, code: string) => Promise<AuthUser>;
   setSession: (token: string, user: AuthUser) => void;
   logout: () => void;
@@ -36,6 +37,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result.user;
   }
 
+  // Same {mfaRequired}-or-real-session shape as login() -- a verified
+  // Google identity is just a different first factor, so it goes through
+  // the exact same MFA branching on the frontend too.
+  async function loginWithGoogle(idToken: string) {
+    const result = await api.loginWithGoogle(idToken);
+    if ("mfaRequired" in result) {
+      return result;
+    }
+    setSession(result.token, result.user);
+    return result.user;
+  }
+
   // Completes a two-step MFA login, given the tempToken login() returned.
   async function verifyMfa(tempToken: string, code: string) {
     const { token, user } = await api.mfaVerifyLogin(tempToken, code);
@@ -61,7 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, verifyMfa, setSession, logout, updateUser }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, login, loginWithGoogle, verifyMfa, setSession, logout, updateUser }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

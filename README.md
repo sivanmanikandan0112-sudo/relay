@@ -242,6 +242,56 @@ or a backup code.
   a captured temp token (which only proves the password was correct) can't be used for anything
   else in the 5 minutes before it expires.
 
+### Public landing page & self-service coach signup
+
+`/` is a public landing page (`frontend/src/pages/Home.tsx`, outside `RequireAuth`) — a short pitch
+plus **Sign in** / **Get started** buttons — for anyone who lands on `relaycoach.app` cold, before
+any login exists. A signed-in visitor hitting `/` is redirected straight to their own app (Brief or
+Check-in) instead of seeing the pitch again; that redirect used to live in a dedicated
+`HomeRedirect` component and now lives in `Home.tsx` itself, since there's no longer a case where
+`/` renders anything else for a logged-out visitor.
+
+**Get started** leads to `/signup` (`POST /api/auth/signup`, public, rate-limited via the new
+`signupLimiter`) — real, self-service account creation, no invite required. It always creates a
+`role: COACH` account (athletes still only ever join via a coach's invite — see above; nothing
+about the invite model changed) and the coach **picks their own password** at signup, same
+validation as everywhere else a password is set (`AcceptInvite.tsx`'s form, min 8 characters) —
+unlike `create-account.ts`, which generates one. This is the first and only public,
+credential-free way to create an account in this app; every other path (CLI script,
+`--make-super-admin`, athlete/coach invites) still requires either shell access to the deployment
+or an existing member inviting you.
+
+### Google sign-in
+
+Optional, additional login method — **linked to an existing account**, not a signup bypass.
+Signing in with Google never creates an account by itself: `POST /api/auth/google` 404s for any
+Google identity that isn't already linked to a `User`, with a message pointing the visitor back to
+password sign-in. This was a deliberate choice over auto-provisioning, for the same reason athlete
+signup stays invite-only — account creation in this app is always a decision by either the person
+themself (coach signup, above) or their coach (athlete invite), never an incidental side effect of
+which button someone happened to click.
+
+- **Linking**: from **My Profile**, `POST /api/me/google-link` verifies a real Google ID token
+  server-side (`google-auth-library`'s `OAuth2Client.verifyIdToken`,
+  [`lib/google.ts`](backend/src/lib/google.ts)) and only links it if the token's **verified** email
+  exactly matches the signed-in account's own email — so no one can link a Google identity to an
+  account that isn't provably theirs. `User.googleId` is a new, separate, nullable-unique column;
+  it never replaces `passwordHash` — every account keeps a real password regardless of whether
+  Google is also linked, and can unlink (`DELETE /api/me/google-link`) at any time. A Google
+  identity already linked elsewhere 409s rather than silently stealing the link.
+- **Signing in**: `POST /api/auth/google` looks up the account by `googleId` and, once found, goes
+  through the exact same `sessionOrMfaChallenge()` path as password login — a linked account with
+  TOTP enabled still gets the `{mfaRequired: true, tempToken}` challenge first. Google sign-in is
+  never a way to skip 2FA.
+- **Frontend**: [`lib/google.ts`](frontend/src/lib/google.ts) loads Google's own Identity Services
+  script and renders Google's own button — no custom "Sign in with Google" UI to keep in sync with
+  their branding requirements. Both the button on **Login** and the whole link/unlink panel on
+  **Profile** are gated on `VITE_GOOGLE_CLIENT_ID` being set at build time
+  (`GOOGLE_CONFIGURED` in each file) — unset, neither renders anything at all (no dangling divider,
+  no broken button), so the app is fully functional with Google sign-in simply not configured yet,
+  which is the actual state of this deployment right now. See
+  [Google sign-in setup](#google-sign-in-setup) below for what's needed to turn it on.
+
 ## Data model
 
 - **Squad** — a roster grouping (Girls, Boys)
@@ -518,6 +568,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Log in with username + password. Returns a JWT, or `{mfaRequired, tempToken}` if 2FA is enabled |
+| POST | `/api/auth/signup` | Public, rate-limited: create a real, self-service coach account with a chosen password. Returns a real session |
+| POST | `/api/auth/google` | Public, rate-limited: sign in with a verified Google ID token. 404s if that identity isn't already linked to an account; otherwise same `{mfaRequired, tempToken}`-or-session shape as `/login` |
 | POST | `/api/auth/mfa/verify` | Complete a two-step login: `{tempToken, code}` (TOTP or backup code) → real JWT (public, rate-limited) |
 | POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly (rate-limited) |
 | POST | `/api/auth/reset-password` | Consume a reset token, set a new password |
@@ -527,6 +579,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/me` | Current user's profile (role, linked athleteId, gender, hasCoach, schoolId/schoolName, isSuperAdmin) |
 | PATCH | `/api/me/gender` | Set your gender (athlete only — also moves you into the matching squad) |
 | PATCH | `/api/me/password` | Change your own password (both roles; requires current password) |
+| POST | `/api/me/google-link` | Link your account to a Google identity — requires the token's verified email to match your own |
+| DELETE | `/api/me/google-link` | Unlink Google from your account |
 | PATCH | `/api/me/readiness-visibility` | Athlete only: opt in/out of seeing your own readiness score |
 | GET | `/api/me/readiness` | Athlete only: your current readiness if you've opted in (`{shared: false, latest: null}` otherwise) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
@@ -608,12 +662,44 @@ build/start at its own workspace with `-w`:
 | `EMAIL_FROM` | No (if using Resend) | e.g. `"Relay <admin@relaycoach.app>"` — the sending domain must be verified in Resend first (see below) |
 | `FRONTEND_URL` | No (if using Resend) | The frontend's public URL, used to build links inside real emails, e.g. `https://relaycoach.app` |
 | `MFA_ENCRYPTION_KEY` | **Yes, before anyone enables 2FA** | 64 hex characters (32 bytes) for AES-256-GCM — generate with `openssl rand -hex 32`. Unlike email, there's no simulate fallback: MFA setup fails with a clear error if this is missing rather than ever storing a TOTP secret insecurely. Use a different key per environment; never commit a real one. |
+| `GOOGLE_CLIENT_ID` | No | Enables `POST /api/auth/google` and `/api/me/google-link` to actually verify tokens. Unset, the routes still exist but any call fails loudly (`verifyGoogleIdToken` throws before doing anything) rather than silently accepting an unverified identity. See [Google sign-in setup](#google-sign-in-setup). |
 
 **Frontend:**
 
 | Variable | Required? | Notes |
 |---|---|---|
 | `VITE_API_BASE_URL` | Yes, once deployed separately from the backend | The backend's public base URL + `/api`, e.g. `https://api.relaycoach.app/api`. Unset, API calls go to `/api` on the frontend's own origin, which only works when a dev proxy or shared origin exists — see [`lib/api.ts`](frontend/src/lib/api.ts). Baked in at **build** time (Vite), so set it before the build runs, not just at runtime. |
+| `VITE_GOOGLE_CLIENT_ID` | No | Same OAuth client ID as the backend's `GOOGLE_CLIENT_ID` — not a secret, it's meant to be embedded in the frontend bundle. Unset, the "Sign in with Google" button and the Profile link/unlink panel just don't render — see [Google sign-in setup](#google-sign-in-setup). Baked in at **build** time. |
+
+### Google sign-in setup
+
+Google sign-in ([above](#google-sign-in)) ships fully code-complete but **disabled** until a real
+OAuth client ID exists — right now neither `GOOGLE_CLIENT_ID` nor `VITE_GOOGLE_CLIENT_ID` is set
+anywhere, so the app runs exactly as it did before this feature, with no partial/broken UI. To turn
+it on:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create (or
+   pick) a project, then **Create Credentials → OAuth client ID → Application type: Web
+   application**.
+2. Under **Authorized JavaScript origins**, add every origin the frontend is actually served from —
+   `https://relaycoach.app` for production, plus `http://localhost:5173` for local dev. No path, no
+   trailing slash. (No redirect URI is needed — Google Identity Services' button flow returns the
+   credential to the page directly via JavaScript, it doesn't redirect.)
+3. If prompted to configure the **OAuth consent screen** first, External user type, app name
+   "Relay", and the app's own support email is enough to get a working client ID; it can stay in
+   "Testing" publishing status while iterating, but move it to "In production" before real users hit
+   it, or Google will cap it to a small list of manually-added test users.
+4. Copy the generated **Client ID** (looks like `123456789-abc...apps.googleusercontent.com`) — the
+   **Client secret** on the same screen is not used anywhere in this flow (verification happens with
+   the ID token itself, not a server-side code exchange) and doesn't need to be stored anywhere.
+5. Set `GOOGLE_CLIENT_ID` on the Railway **backend** service and `VITE_GOOGLE_CLIENT_ID` on the
+   Railway **frontend** service, both to that same client ID, then redeploy the frontend (it's
+   baked in at build time — an env-var-only change on Railway still needs a rebuild, not just a
+   restart).
+6. Once both are set, the "Sign in with Google" button appears on Login and the link/unlink panel
+   appears on Profile automatically — no further code changes. Link an existing account first
+   (Profile → Continue with Google) before testing sign-in with it, since Google sign-in never
+   auto-creates an account.
 
 ### Resend: sending from a custom domain like `admin@relaycoach.app`
 

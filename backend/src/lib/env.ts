@@ -30,4 +30,13 @@ export const env = {
   // use if this is missing or the wrong length, rather than ever falling
   // back to storing a TOTP secret insecurely.
   mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
+
+  // Required for "Sign in with Google" (lib/google.ts) -- the OAuth
+  // client ID registered in Google Cloud Console for this domain. Not
+  // required() here, same optional-at-boot pattern as resendApiKey:
+  // lib/google.ts throws a clear error at the point of use if it's
+  // missing, rather than the whole app failing to boot over a feature
+  // that hasn't been configured yet. Not a secret -- the frontend embeds
+  // the same client ID (VITE_GOOGLE_CLIENT_ID) to render the button.
+  googleClientId: process.env.GOOGLE_CLIENT_ID,
 };

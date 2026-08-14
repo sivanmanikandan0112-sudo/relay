@@ -8,8 +8,9 @@ import { getOwnAthleteId } from "../lib/authz.js";
 import { issueResetToken } from "../lib/passwordReset.js";
 import { hashToken } from "../lib/tokenHash.js";
 import { decrypt } from "../lib/crypto.js";
-import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter } from "../lib/rateLimit.js";
+import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter, signupLimiter, googleLoginLimiter } from "../lib/rateLimit.js";
 import { dayKey } from "../lib/date.js";
+import { verifyGoogleIdToken } from "../lib/google.js";
 import type { User, School } from "@prisma/client";
 
 export const authRouter = Router();
@@ -71,8 +72,23 @@ async function buildSession(user: User & { school: School | null }) {
       schoolName: user.school?.name ?? null,
       isSuperAdmin: user.isSuperAdmin,
       mfaEnabled: user.totpEnabled,
+      googleLinked: !!user.googleId,
     },
   };
+}
+
+// Shared by both real ways to prove "I am this user" (a correct password,
+// or a verified Google identity already linked to this account): if MFA
+// is enabled, neither one is enough on its own -- issue the same 5-minute
+// mfaPending temp token POST /mfa/verify expects, instead of a real
+// session. Google sign-in doesn't get to skip a second factor just
+// because it's a different first factor.
+async function sessionOrMfaChallenge(user: User & { school: School | null }) {
+  if (user.totpEnabled) {
+    const tempToken = signToken({ sub: user.id, role: user.role, isSuperAdmin: user.isSuperAdmin, mfaPending: true }, { expiresIn: "5m" });
+    return { mfaRequired: true as const, tempToken };
+  }
+  return buildSession(user);
 }
 
 const loginSchema = z.object({
@@ -92,17 +108,88 @@ authRouter.post("/login", loginLimiter, async (req, res) => {
     return res.status(401).json({ error: "Invalid username or password" });
   }
 
-  if (user.totpEnabled) {
-    // Password verified, but that's only the first factor -- issue a
-    // short-lived token that proves *that* much and nothing else
-    // (requireAuth rejects it outright on every ordinary route; see
-    // middleware/requireAuth.ts), and require POST /mfa/verify to
-    // finish. No real session yet.
-    const tempToken = signToken({ sub: user.id, role: user.role, isSuperAdmin: user.isSuperAdmin, mfaPending: true }, { expiresIn: "5m" });
-    return res.json({ mfaRequired: true, tempToken });
+  // Password verified, but if MFA is enabled that's only the first
+  // factor -- sessionOrMfaChallenge issues the short-lived tempToken
+  // instead (requireAuth rejects it outright on every ordinary route;
+  // see middleware/requireAuth.ts), and POST /mfa/verify finishes it.
+  res.json(await sessionOrMfaChallenge(user));
+});
+
+// "Sign in with Google" -- only usable for an account that already
+// linked a Google identity from My Profile (see routes/me.ts's
+// POST /google-link). Never creates an account and never bypasses the
+// athlete-invite flow: an unrecognized Google identity here is a 404,
+// not a signup. The verified ID token proves the same thing a correct
+// password does -- "I am this user" -- so it goes through the exact
+// same MFA gate as a password login, not around it.
+const googleLoginSchema = z.object({ idToken: z.string().min(1) });
+
+authRouter.post("/google", googleLoginLimiter, async (req, res) => {
+  const parsed = googleLoginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  res.json(await buildSession(user));
+  let identity;
+  try {
+    identity = await verifyGoogleIdToken(parsed.data.idToken);
+  } catch {
+    return res.status(401).json({ error: "Invalid Google sign-in" });
+  }
+
+  const user = await prisma.user.findUnique({ where: { googleId: identity.googleId }, include: { school: true } });
+  if (!user) {
+    return res.status(404).json({
+      error: "No Relay account is linked to this Google account yet — sign in with your password and link Google from your Profile.",
+    });
+  }
+
+  res.json(await sessionOrMfaChallenge(user));
+});
+
+// Public, self-service coach signup -- the only way to create a Relay
+// account without either an admin running create-account.ts or an
+// invite link. Deliberately COACH-only: a coach is the entry point into
+// this app's roster model (they invite/self-serve a school, then invite
+// athletes), so opening this up doesn't loosen how athletes get
+// provisioned -- that's still invite-only, untouched. Same
+// username/password validation as routes/inviteAccept.ts's real
+// account-creation path, since this is functionally the same operation
+// (create a real account, log them straight in) just without a token to
+// consume first.
+const signupSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .max(40)
+    .regex(/^[a-z0-9._-]+$/i, "Letters, numbers, dots, dashes, and underscores only"),
+  email: z.string().trim().email(),
+  password: z.string().min(8),
+  firstName: z.string().trim().min(1).max(60),
+  lastName: z.string().trim().min(1).max(60),
+});
+
+authRouter.post("/signup", signupLimiter, async (req, res) => {
+  const parsed = signupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { username, password, firstName, lastName } = parsed.data;
+  const email = parsed.data.email.toLowerCase();
+
+  const usernameTaken = await prisma.user.findUnique({ where: { username } });
+  if (usernameTaken) return res.status(409).json({ error: "That username is already taken" });
+  const emailTaken = await prisma.user.findUnique({ where: { email } });
+  if (emailTaken) return res.status(409).json({ error: "An account already exists for that email — try signing in instead" });
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: { username, email, passwordHash, firstName, lastName, role: "COACH" },
+    include: { school: true },
+  });
+
+  res.status(201).json(await buildSession(user));
 });
 
 const mfaLoginVerifySchema = z.object({

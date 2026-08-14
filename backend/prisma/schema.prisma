@@ -76,6 +76,15 @@ model User {
   totpSecretEncrypted String?
   totpEnabled          Boolean @default(false)
   mfaBackupCodes       MfaBackupCode[]
+  // Optional, self-service, both roles -- links this account to a Google
+  // identity so its owner can sign in without typing their password
+  // (Google's own stable per-account "sub" claim, see lib/google.ts).
+  // Does NOT replace passwordHash -- every account still has a real
+  // password set at creation, Google is a second way in, not a
+  // passwordless account. Linking never creates a new account and never
+  // bypasses the athlete-invite flow; see routes/me.ts's
+  // POST/DELETE /google-link and routes/auth.ts's POST /auth/google.
+  googleId             String? @unique
   athlete       Athlete?
   notes         Note[]
   coachAthletes CoachAthlete[]

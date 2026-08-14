@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { renderGoogleButton } from "../lib/google";
+
+const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 export function Profile() {
   const { user, updateUser } = useAuth();
@@ -29,11 +32,44 @@ export function Profile() {
   const [readinessSaving, setReadinessSaving] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
 
+  // --- Google sign-in link --------------------------------------------
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
+
   function refreshMfaStatus() {
     api.mfaStatus().then(setMfaStatus);
   }
 
   useEffect(refreshMfaStatus, []);
+
+  // Only renders a button while not already linked -- a no-op if
+  // VITE_GOOGLE_CLIENT_ID isn't set (see lib/google.ts).
+  useEffect(() => {
+    if (user?.googleLinked) return;
+    renderGoogleButton("google-link-btn", "continue_with", async (idToken) => {
+      setGoogleError(null);
+      try {
+        await api.linkGoogle(idToken);
+        updateUser({ googleLinked: true });
+      } catch (err) {
+        setGoogleError(err instanceof Error ? err.message : "Couldn't link that Google account");
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.googleLinked]);
+
+  async function handleUnlinkGoogle() {
+    setGoogleError(null);
+    setUnlinking(true);
+    try {
+      await api.unlinkGoogle();
+      updateUser({ googleLinked: false });
+    } catch (err) {
+      setGoogleError(err instanceof Error ? err.message : "Couldn't unlink Google");
+    } finally {
+      setUnlinking(false);
+    }
+  }
 
   async function handleChangePassword(e: FormEvent) {
     e.preventDefault();
@@ -175,6 +211,34 @@ export function Profile() {
           </button>
         </form>
       </div>
+
+      {(GOOGLE_CONFIGURED || user?.googleLinked) && (
+      <div className="panel">
+        <h2>Sign in with Google</h2>
+        {user?.googleLinked ? (
+          <div>
+            <p style={{ color: "#4ea373", fontSize: 13.5 }}>✓ Linked — you can sign in with Google instead of your password.</p>
+            <button className="btn-secondary" disabled={unlinking} onClick={handleUnlinkGoogle}>
+              {unlinking ? "Unlinking…" : "Unlink Google"}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ color: "var(--text-dim)", fontSize: 13.5, marginBottom: 10 }}>
+              Link your Google account to sign in without typing your password. This doesn't replace your
+              password or change what you can do — it's just a second way in, and only works for the Google
+              account matching this profile's email ({user?.email}).
+            </p>
+            <div id="google-link-btn" />
+          </div>
+        )}
+        {googleError && (
+          <p className="error" style={{ marginTop: 8 }}>
+            {googleError}
+          </p>
+        )}
+      </div>
+      )}
 
       {user?.role === "ATHLETE" && (
         <div className="panel">

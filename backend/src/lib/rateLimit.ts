@@ -25,5 +25,12 @@ function buildAuthRateLimiter(opts: { windowMs: number; max: number; skip?: Opti
 export const loginLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 export const forgotPasswordLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 export const mfaVerifyLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+// A public account-creation endpoint is a real abuse target (bot-created
+// accounts) -- capped tighter than login, same 15-minute window as forgot-password.
+export const signupLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+// Same threat model as loginLimiter (an unauthenticated attempt to
+// establish a session) -- its own instance rather than reusing
+// loginLimiter, matching this file's one-limiter-per-route convention.
+export const googleLoginLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 
 export { buildAuthRateLimiter };

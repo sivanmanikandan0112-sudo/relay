@@ -11,7 +11,9 @@ import { Profile } from "./pages/Profile";
 import { AthleteCheckin } from "./pages/AthleteCheckin";
 import { AthleteRuns } from "./pages/AthleteRuns";
 import { AthleteHowItWorks } from "./pages/AthleteHowItWorks";
+import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
+import { Signup } from "./pages/Signup";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ResetPassword } from "./pages/ResetPassword";
 import { AcceptInvite } from "./pages/AcceptInvite";
@@ -45,16 +47,12 @@ function RequireSuperAdmin({ children }: { children: React.ReactElement }) {
   return children;
 }
 
-function HomeRedirect() {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === "COACH" ? "/brief" : "/checkin"} replace />;
-}
-
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/accept-invite/:token" element={<AcceptInvite />} />
@@ -65,7 +63,6 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<HomeRedirect />} />
         <Route path="/profile" element={<Profile />} />
 
         <Route path="/brief" element={<RequireRole role="COACH"><Brief /></RequireRole>} />

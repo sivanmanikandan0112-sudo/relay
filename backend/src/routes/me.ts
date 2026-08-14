@@ -1,9 +1,11 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { getOwnAthleteId } from "../lib/authz.js";
+import { verifyGoogleIdToken } from "../lib/google.js";
 
 export const meRouter = Router();
 
@@ -47,6 +49,7 @@ meRouter.get("/", async (req, res) => {
     schoolName: user.school?.name ?? null,
     isSuperAdmin: user.isSuperAdmin,
     mfaEnabled: user.totpEnabled,
+    googleLinked: !!user.googleId,
   });
 });
 
@@ -156,4 +159,47 @@ meRouter.patch("/password", async (req, res) => {
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   res.json({ changed: true });
+});
+
+const googleLinkSchema = z.object({ idToken: z.string().min(1) });
+
+// Links the caller's *already-authenticated* account to a Google
+// identity -- this never creates an account and never logs anyone in by
+// itself (contrast with POST /api/auth/google, which does the login,
+// only for an identity already linked here). Requires the Google
+// token's own verified email to match this account's email, so linking
+// is really just "prove you also own this Google account", not a way to
+// attach someone else's Google identity to your Relay account.
+meRouter.post("/google-link", async (req, res) => {
+  const parsed = googleLinkSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  let identity;
+  try {
+    identity = await verifyGoogleIdToken(parsed.data.idToken);
+  } catch {
+    return res.status(401).json({ error: "Invalid Google sign-in" });
+  }
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  if (!identity.emailVerified || identity.email !== user.email.toLowerCase()) {
+    return res.status(400).json({ error: "That Google account's email doesn't match your Relay account's email" });
+  }
+
+  try {
+    await prisma.user.update({ where: { id: user.id }, data: { googleId: identity.googleId } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ error: "That Google account is already linked to a different Relay account" });
+    }
+    throw err;
+  }
+  res.json({ linked: true });
+});
+
+meRouter.delete("/google-link", async (req, res) => {
+  await prisma.user.update({ where: { id: req.user!.sub }, data: { googleId: null } });
+  res.json({ linked: false });
 });
