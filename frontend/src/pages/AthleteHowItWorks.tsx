@@ -14,7 +14,13 @@ const STEPS = [
   },
   {
     title: "That's it — just run",
-    body: "Relay handles the rest quietly in the background. You won't get scary scores or charts; if anything ever needs attention, your coach reaches out to you.",
+    body: (
+      <>
+        Relay handles the rest quietly in the background. By default you won't see a score or
+        chart — if anything ever needs attention, your coach reaches out to you. Curious anyway?
+        There's an opt-in to see your own readiness number in your <strong>Profile</strong>.
+      </>
+    ),
   },
 ];
 
