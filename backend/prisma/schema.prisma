@@ -45,6 +45,12 @@ enum InviteType {
   COACH_TO_SCHOOL
 }
 
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum Gender {
   FEMALE
   MALE
@@ -91,6 +97,7 @@ model User {
   invitesSent   Invite[]
   resetTokens   PasswordResetToken[]
   loginEvents   LoginEvent[]
+  decidedJoinRequests SchoolJoinRequest[] // requests this coach approved/rejected -- see SchoolJoinRequest.decidedBy
   createdAt     DateTime  @default(now())
 }
 
@@ -142,7 +149,62 @@ model School {
   location  String?
   coaches   User[]
   invites   Invite[]
+  // Short, human-typeable code an athlete enters at /join to submit a
+  // join request for this school -- deliberately not a long random
+  // token like Invite.token, since a coach reads this one aloud/posts it
+  // somewhere for a whole roster rather than sending it to one person.
+  // Nullable rather than backfilled: every *new* school gets one at
+  // creation (routes/schools.ts), and any pre-existing school gets one
+  // lazily the first time lib/schoolDetail.ts's ensureJoinCode reads it
+  // -- same "optional, self-healing" spirit as this repo's other
+  // nullable-unique columns. Regenerating (coach-only) just replaces it;
+  // the old code stops resolving but already-submitted requests are
+  // untouched, since they don't store the code itself.
+  joinCode      String?             @unique
+  joinRequests  SchoolJoinRequest[]
   createdAt DateTime @default(now())
+}
+
+// An athlete-initiated, coach-approved counterpart to the coach-initiated
+// Invite flow above: an athlete types a school's joinCode into the public
+// /join page and submits their own proposed account details, which sit
+// here as PENDING until any coach *at that school* approves or rejects
+// them (schools already share roster visibility across their coaches --
+// see lib/authz.ts -- so a shared pending-requests queue matches that
+// same model, rather than inventing a single "owner" coach role).
+//
+// Deliberately does NOT create a User up front, even though the
+// password is already chosen at request time -- an account only ever
+// exists in this app once someone with authority has agreed to it (a
+// coach sending an Invite, or a coach approving one of these), matching
+// every other account-creation path. Approving materializes a real
+// User + Athlete + CoachAthlete in one transaction, exactly mirroring
+// inviteAccept.ts's own athlete-invite branch; rejecting just closes
+// this row out, no account ever existed.
+model SchoolJoinRequest {
+  id              String            @id @default(cuid())
+  school          School            @relation(fields: [schoolId], references: [id])
+  schoolId        String
+  firstName       String
+  lastName        String
+  username        String
+  email           String
+  passwordHash    String
+  // Which of the two training squads this athlete expects to join --
+  // the athlete's own guess, standing in for what a coach would normally
+  // pick when sending a bulk Invite (see routes/invites.ts). Corrected
+  // automatically once they set their real gender at first login, same
+  // as any invited athlete's initial squad (see routes/me.ts's PATCH
+  // /gender) -- this is only ever a starting point, not a final answer.
+  squad           Squad             @relation(fields: [squadId], references: [id])
+  squadId         String
+  status          JoinRequestStatus @default(PENDING)
+  createdAt       DateTime          @default(now())
+  decidedAt       DateTime?
+  decidedBy       User?             @relation(fields: [decidedByUserId], references: [id])
+  decidedByUserId String?
+
+  @@index([schoolId, status])
 }
 
 // Many-to-many: an athlete can have more than one coach, and a coach has a
@@ -199,10 +261,11 @@ model PasswordResetToken {
 }
 
 model Squad {
-  id       String    @id @default(cuid())
-  name     SquadName @unique
-  athletes Athlete[]
-  invites  Invite[]
+  id           String              @id @default(cuid())
+  name         SquadName           @unique
+  athletes     Athlete[]
+  invites      Invite[]
+  joinRequests SchoolJoinRequest[]
 }
 
 model Athlete {

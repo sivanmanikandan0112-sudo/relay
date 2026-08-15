@@ -1,3 +1,5 @@
+import { ACUTE_WINDOW_DAYS } from "./math.js";
+
 /**
  * Truncates a Date to its UTC calendar day (midnight UTC) -- the day-bucket
  * key WellnessEntry.day is stored as (see schema.prisma), enforcing one
@@ -33,4 +35,50 @@ export function groupByDay<T>(items: T[], getDate: (item: T) => Date): Array<{ d
     else groups.set(key, { day, items: [item] });
   }
   return [...groups.values()];
+}
+
+// How far back an athlete can backdate a check-in or run. Reuses
+// ACUTE_WINDOW_DAYS rather than inventing a new constant -- a week is
+// enough to catch up after a missed weekend without opening a wide-open
+// history-editing surface, and it's already the exact window that drives
+// the acute load calc, so nothing further back than this meaningfully
+// moves this week's own readiness number anyway.
+export const BACKDATE_WINDOW_DAYS = ACUTE_WINDOW_DAYS;
+
+export interface ResolvedSubmissionDay {
+  day: Date; // UTC calendar day (midnight) -- for WellnessEntry.day / grouping
+  date: Date; // the timestamp to actually stamp the row with
+}
+
+/**
+ * Resolves the (day, date) pair a check-in/run should be stored under,
+ * given an optional caller-supplied "YYYY-MM-DD" dayInput. Returns null
+ * if dayInput is malformed, in the future, or further back than
+ * BACKDATE_WINDOW_DAYS -- callers should 400 on null.
+ *
+ * Omitting dayInput entirely keeps today's exact existing behavior
+ * (stamped with the live `now`, to the second) -- this function only
+ * changes anything once a caller actually asks for a past day.
+ *
+ * A resolved past day is stamped at noon UTC rather than midnight, so it
+ * lands unambiguously inside that calendar day under every gte/lte range
+ * query in this codebase (all of which compare against a `now` reading,
+ * never another midnight) without a timezone-boundary case shoving it a
+ * millisecond into the wrong day.
+ */
+export function resolveSubmissionDay(now: Date, dayInput?: string): ResolvedSubmissionDay | null {
+  const today = dayKey(now);
+  if (dayInput === undefined) return { day: today, date: now };
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayInput)) return null;
+  const parsed = new Date(`${dayInput}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const day = dayKey(parsed);
+
+  if (day.getTime() > today.getTime()) return null; // no future submissions
+  const floor = today.getTime() - (BACKDATE_WINDOW_DAYS - 1) * 86400000;
+  if (day.getTime() < floor) return null; // outside the allowed lookback window
+
+  if (day.getTime() === today.getTime()) return { day, date: now };
+  return { day, date: new Date(day.getTime() + 12 * 3600000) };
 }

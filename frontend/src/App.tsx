@@ -13,7 +13,7 @@ import { AthleteRuns } from "./pages/AthleteRuns";
 import { AthleteHowItWorks } from "./pages/AthleteHowItWorks";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
-import { Signup } from "./pages/Signup";
+import { Join } from "./pages/Join";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ResetPassword } from "./pages/ResetPassword";
 import { AcceptInvite } from "./pages/AcceptInvite";
@@ -52,7 +52,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
+      <Route path="/join" element={<Join />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/accept-invite/:token" element={<AcceptInvite />} />

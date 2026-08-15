@@ -25,12 +25,19 @@ function buildAuthRateLimiter(opts: { windowMs: number; max: number; skip?: Opti
 export const loginLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 export const forgotPasswordLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 export const mfaVerifyLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
-// A public account-creation endpoint is a real abuse target (bot-created
-// accounts) -- capped tighter than login, same 15-minute window as forgot-password.
-export const signupLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 // Same threat model as loginLimiter (an unauthenticated attempt to
 // establish a session) -- its own instance rather than reusing
 // loginLimiter, matching this file's one-limiter-per-route convention.
 export const googleLoginLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
+// A join code is short (6 unbiased alphanumeric chars -- see
+// lib/joinCode.ts) and only gates seeing a school's *name*, not
+// anything sensitive, but still rate-limited as defense-in-depth against
+// brute-force code guessing. Looser than joinRequestLimiter below since
+// this is a read, not an account-adjacent write.
+export const joinCodeLookupLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+// A public, unauthenticated, account-creation-adjacent write (creates a
+// SchoolJoinRequest, not a real account -- see routes/schoolJoin.ts) --
+// capped the same as forgotPasswordLimiter, tighter than a plain login attempt.
+export const joinRequestLimiter = buildAuthRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 
 export { buildAuthRateLimiter };

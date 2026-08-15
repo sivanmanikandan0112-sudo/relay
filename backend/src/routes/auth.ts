@@ -8,7 +8,7 @@ import { getOwnAthleteId } from "../lib/authz.js";
 import { issueResetToken } from "../lib/passwordReset.js";
 import { hashToken } from "../lib/tokenHash.js";
 import { decrypt } from "../lib/crypto.js";
-import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter, signupLimiter, googleLoginLimiter } from "../lib/rateLimit.js";
+import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter, googleLoginLimiter } from "../lib/rateLimit.js";
 import { dayKey } from "../lib/date.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import type { User, School } from "@prisma/client";
@@ -145,51 +145,6 @@ authRouter.post("/google", googleLoginLimiter, async (req, res) => {
   }
 
   res.json(await sessionOrMfaChallenge(user));
-});
-
-// Public, self-service coach signup -- the only way to create a Relay
-// account without either an admin running create-account.ts or an
-// invite link. Deliberately COACH-only: a coach is the entry point into
-// this app's roster model (they invite/self-serve a school, then invite
-// athletes), so opening this up doesn't loosen how athletes get
-// provisioned -- that's still invite-only, untouched. Same
-// username/password validation as routes/inviteAccept.ts's real
-// account-creation path, since this is functionally the same operation
-// (create a real account, log them straight in) just without a token to
-// consume first.
-const signupSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .min(3)
-    .max(40)
-    .regex(/^[a-z0-9._-]+$/i, "Letters, numbers, dots, dashes, and underscores only"),
-  email: z.string().trim().email(),
-  password: z.string().min(8),
-  firstName: z.string().trim().min(1).max(60),
-  lastName: z.string().trim().min(1).max(60),
-});
-
-authRouter.post("/signup", signupLimiter, async (req, res) => {
-  const parsed = signupSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const { username, password, firstName, lastName } = parsed.data;
-  const email = parsed.data.email.toLowerCase();
-
-  const usernameTaken = await prisma.user.findUnique({ where: { username } });
-  if (usernameTaken) return res.status(409).json({ error: "That username is already taken" });
-  const emailTaken = await prisma.user.findUnique({ where: { email } });
-  if (emailTaken) return res.status(409).json({ error: "An account already exists for that email — try signing in instead" });
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: { username, email, passwordHash, firstName, lastName, role: "COACH" },
-    include: { school: true },
-  });
-
-  res.status(201).json(await buildSession(user));
 });
 
 const mfaLoginVerifySchema = z.object({

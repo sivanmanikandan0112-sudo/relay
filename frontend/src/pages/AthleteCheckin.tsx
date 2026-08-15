@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
-import { formatShortDate } from "../lib/format";
+import { dayLabel, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
 
@@ -16,6 +16,7 @@ export function AthleteCheckin() {
   const { user } = useAuth();
   const athleteId = user?.athleteId ?? null;
   const [history, setHistory] = useState<WellnessEntry[]>([]);
+  const [selectedDay, setSelectedDay] = useState(todayKey());
   const [draft, setDraft] = useState({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
   const [msg, setMsg] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -29,32 +30,40 @@ export function AthleteCheckin() {
 
   useEffect(refresh, [athleteId]);
 
-  // Whether today already has a check-in isn't session state -- it's a
-  // fact about the data, so it has to survive a reload or coming back to
-  // this page later, not just live in `submitted` for as long as this
-  // component happens to stay mounted. Multiple check-ins a day are
-  // allowed (each POST creates a new row rather than overwriting), so
-  // this is the *latest* one for today, matching history's own newest-first order.
-  const todayEntry = history.find((h) => new Date(h.date).toDateString() === new Date().toDateString()) ?? null;
+  const isToday = selectedDay === todayKey();
 
-  // Once today's entry shows up (on load, or right after a submit),
-  // reflect its real values instead of leaving the sliders at their
-  // neutral 3/3/3/3/3 default -- otherwise re-submitting without
-  // touching anything would silently overwrite an honest rating with a
-  // fake "everything's a 3".
+  // Whether the selected day already has a check-in isn't session state
+  // -- it's a fact about the data, so it has to survive a reload or
+  // coming back to this page later, not just live in `submitted` for as
+  // long as this component happens to stay mounted. One check-in per
+  // athlete per day (see backend's upsert), so this is at most one entry.
+  const selectedEntry = history.find((h) => h.day.slice(0, 10) === selectedDay) ?? null;
+
+  // Once the selected day's entry shows up (on load, right after a
+  // submit, or from switching which day is picked), reflect its real
+  // values instead of leaving the sliders at their neutral 3/3/3/3/3
+  // default -- otherwise re-submitting without touching anything would
+  // silently overwrite an honest rating with a fake "everything's a 3".
+  // Switching to a day with *no* entry yet resets back to that same
+  // neutral default, not whatever the previously-selected day left behind.
   useEffect(() => {
-    if (!todayEntry) return;
+    if (!selectedEntry) {
+      setDraft({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
+      setMsg("");
+      setSubmitted(false);
+      return;
+    }
     setDraft({
-      sleep: todayEntry.sleep,
-      energy: todayEntry.energy,
-      mood: todayEntry.mood,
-      motivation: todayEntry.motivation,
-      soreness: todayEntry.soreness,
+      sleep: selectedEntry.sleep,
+      energy: selectedEntry.energy,
+      mood: selectedEntry.mood,
+      motivation: selectedEntry.motivation,
+      soreness: selectedEntry.soreness,
     });
-    setMsg(todayEntry.msg ?? "");
+    setMsg(selectedEntry.msg ?? "");
     setSubmitted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayEntry?.id]);
+  }, [selectedEntry?.id, selectedDay]);
 
   // Only fetch if the athlete has opted in from Profile -- the endpoint
   // itself also enforces this, this just avoids a pointless call otherwise.
@@ -82,7 +91,7 @@ export function AthleteCheckin() {
   async function handleSubmit() {
     setSaving(true);
     try {
-      await api.submitWellness({ ...draft, msg: msg.trim() || undefined });
+      await api.submitWellness({ ...draft, msg: msg.trim() || undefined, day: isToday ? undefined : selectedDay });
       setSubmitted(true);
       refresh();
     } finally {
@@ -101,12 +110,26 @@ export function AthleteCheckin() {
         </span>
       </div>
       <h1 className="page-title" style={{ margin: "0 0 6px" }}>
-        How are you feeling today?
+        {isToday ? "How are you feeling today?" : `How were you feeling ${dayLabel(selectedDay).toLowerCase()}?`}
       </h1>
       <p className="page-subtitle" style={{ fontSize: 13, maxWidth: "56ch" }}>
         This is the earliest sign of overtraining — how you feel shifts before your times do. It stays
         between you and your coach.
       </p>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <span className="field-hint" style={{ color: "var(--text-dim-2)", margin: 0 }}>
+          LOGGING FOR
+        </span>
+        <select className="ath-input" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)}>
+          {recentDayOptions().map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {!isToday && <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-faint)" }}>catching up on a missed day</span>}
+      </label>
 
       {user?.readinessShared && (
         <div className="panel" style={{ marginTop: 0, marginBottom: 16 }}>
@@ -173,12 +196,18 @@ export function AthleteCheckin() {
           placeholder="e.g. Right shin a little tender on the downhills."
         />
         <button className="checkin-submit" disabled={saving} onClick={handleSubmit}>
-          {saving ? "Saving…" : submitted ? "Update today's check-in" : "Submit today's check-in"}
+          {saving
+            ? "Saving…"
+            : submitted
+              ? `Update ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`
+              : `Submit ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`}
         </button>
         {submitted && (
           <div className="checkin-confirm">
             <span>✓</span>
-            <span>Today's check-in is in — change anything above and update it anytime.</span>
+            <span>
+              {isToday ? "Today's" : `${dayLabel(selectedDay)}'s`} check-in is in — change anything above and update it anytime.
+            </span>
           </div>
         )}
       </div>

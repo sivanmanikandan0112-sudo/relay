@@ -38,8 +38,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-  signup: (input: { username: string; email: string; password: string; firstName: string; lastName: string }) =>
-    request<{ token: string; user: AuthUser }>("/auth/signup", { method: "POST", body: JSON.stringify(input) }),
   loginWithGoogle: (idToken: string) =>
     request<{ token: string; user: AuthUser } | { mfaRequired: true; tempToken: string }>("/auth/google", {
       method: "POST",
@@ -128,7 +126,7 @@ export const api = {
 
   mySchool: () => request<{ school: SchoolDetail | null }>("/schools/mine"),
   createSchool: (name: string, location?: string) =>
-    request<School>("/schools", { method: "POST", body: JSON.stringify({ name, location }) }),
+    request<School & { joinCode: string }>("/schools", { method: "POST", body: JSON.stringify({ name, location }) }),
   school: (id: string) => request<SchoolDetail>(`/schools/${id}`),
   updateSchool: (id: string, name: string, location?: string) =>
     request<School>(`/schools/${id}`, { method: "PATCH", body: JSON.stringify({ name, location }) }),
@@ -137,6 +135,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+  regenerateJoinCode: (schoolId: string) =>
+    request<{ joinCode: string }>(`/schools/${schoolId}/regenerate-code`, { method: "POST" }),
+  schoolJoinRequests: (schoolId: string) => request<SchoolJoinRequestSummary[]>(`/schools/${schoolId}/requests`),
+  approveJoinRequest: (schoolId: string, requestId: string) =>
+    request<{ athleteId: string; username: string }>(`/schools/${schoolId}/requests/${requestId}/approve`, { method: "POST" }),
+  rejectJoinRequest: (schoolId: string, requestId: string) =>
+    request<void>(`/schools/${schoolId}/requests/${requestId}/reject`, { method: "POST" }),
+
+  // Public, unauthenticated -- the athlete-initiated side of the
+  // join-code flow (see routes/schoolJoin.ts). Never returns a session:
+  // submitting creates a pending request, not an account -- see the
+  // schema comment on SchoolJoinRequest.
+  resolveJoinCode: (code: string) => request<{ schoolName: string }>(`/join/${code}`),
+  submitJoinRequest: (code: string, input: JoinRequestInput) =>
+    request<{ schoolName: string }>(`/join/${code}`, { method: "POST", body: JSON.stringify(input) }),
 
   // Super admin only (backend 403s otherwise).
   adminOverview: () => request<AdminOverview>("/admin/overview"),
@@ -308,12 +321,19 @@ export interface WellnessInput {
   energy: number;
   motivation: number;
   msg?: string;
+  // "YYYY-MM-DD" -- omit for today. Lets an athlete catch up on a recent
+  // missed day; the backend caps how far back this can reach.
+  day?: string;
 }
 
 export interface WellnessEntry extends WellnessInput {
   id: string;
   athleteId: string;
   date: string;
+  // Overrides WellnessInput's request-shaped "day?: YYYY-MM-DD" -- on a
+  // response, this is always present and is the full stored timestamp
+  // for that calendar day (WellnessEntry.day from the backend row).
+  day: string;
 }
 
 export interface RunInput {
@@ -321,9 +341,14 @@ export interface RunInput {
   distanceMiles?: number;
   durationMin: number;
   rpe: number;
+  // Same "YYYY-MM-DD" backdating as WellnessInput.day.
+  day?: string;
 }
 
-export interface Run extends RunInput {
+// Omits RunInput's request-only "day" -- a run row has no separate day
+// column (unlike WellnessEntry), just `date` below, which already lands
+// on the right calendar day for a backdated submission.
+export interface Run extends Omit<RunInput, "day"> {
   id: string;
   athleteId: string;
   date: string;
@@ -382,6 +407,27 @@ export interface SchoolDetail extends School {
   coaches: SchoolCoach[];
   athleteCount: number;
   invites: Invite[];
+  joinCode: string;
+  pendingRequestCount: number;
+}
+
+export interface SchoolJoinRequestSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  email: string;
+  squadName: "GIRLS" | "BOYS";
+  createdAt: string;
+}
+
+export interface JoinRequestInput {
+  firstName: string;
+  lastName: string;
+  username: string;
+  email: string;
+  password: string;
+  squad: "GIRLS" | "BOYS";
 }
 
 export interface AdminOverview {

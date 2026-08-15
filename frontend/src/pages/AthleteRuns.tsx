@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Note, type Run } from "../lib/api";
-import { formatDuration, formatShortDate } from "../lib/format";
+import { dayLabel, formatDuration, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
 import { ConfirmRunModal } from "../components/ConfirmRunModal";
 
@@ -28,6 +28,7 @@ export function AthleteRuns() {
   const [mm, setMm] = useState("0");
   const [ss, setSs] = useState("0");
   const [rpe, setRpe] = useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = useState(todayKey());
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -61,6 +62,7 @@ export function AthleteRuns() {
         distanceMiles: roundDistance(distance),
         durationMin,
         rpe,
+        day: selectedDay === todayKey() ? undefined : selectedDay,
       });
       setTitle("");
       setDistance("");
@@ -68,6 +70,7 @@ export function AthleteRuns() {
       setMm("0");
       setSs("0");
       setRpe(null);
+      setSelectedDay(todayKey());
       setConfirming(false);
       refresh();
     } finally {
@@ -95,7 +98,21 @@ export function AthleteRuns() {
       </div>
 
       <div className="log-run-panel">
-        <div className="field-hint">LOG A RUN MANUALLY</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div className="field-hint">LOG A RUN MANUALLY</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="field-hint" style={{ color: "var(--text-dim-2)", margin: 0 }}>
+              FOR
+            </span>
+            <select className="ath-input" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)}>
+              {recentDayOptions().map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="field-hint" style={{ display: "block", marginTop: 10, marginBottom: 4, color: "var(--text-dim-2)" }}>
           Title
         </label>
@@ -235,6 +252,7 @@ export function AthleteRuns() {
           distanceMiles={roundDistance(distance)}
           durationMin={durationMin}
           rpe={rpe ?? 0}
+          dayLabel={dayLabel(selectedDay)}
           saving={saving}
           onCancel={() => setConfirming(false)}
           onConfirm={handleConfirm}

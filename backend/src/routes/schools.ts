@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { getSchoolDetail } from "../lib/schoolDetail.js";
 import { emailEnabled, sendEmail } from "../lib/email.js";
 import { env } from "../lib/env.js";
+import { assignNewJoinCode } from "../lib/joinCode.js";
 
 export const schoolsRouter = Router();
 
@@ -55,7 +56,8 @@ schoolsRouter.post("/", async (req, res) => {
       await tx.user.update({ where: { id: coach.id }, data: { schoolId: school.id } });
       return school;
     });
-    res.status(201).json({ id: school.id, name: school.name, location: school.location });
+    const joinCode = await assignNewJoinCode(school.id);
+    res.status(201).json({ id: school.id, name: school.name, location: school.location, joinCode });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return res.status(409).json({ error: "A school with that name already exists — ask a coach there to invite you." });
@@ -176,4 +178,112 @@ schoolsRouter.post("/:id/invite-coach", async (req, res) => {
   }
 
   res.status(201).json({ invite, emailSent });
+});
+
+// Replaces this school's join code -- e.g. if it's been shared somewhere
+// it shouldn't have been, or a coach just wants a fresh one for a new
+// season. The old code stops resolving immediately; any requests already
+// submitted under it are untouched (see lib/joinCode.ts's own comment).
+schoolsRouter.post("/:id/regenerate-code", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const school = await prisma.school.findUnique({ where: { id: req.params.id } });
+  if (!school) return res.status(404).json({ error: "Not found" });
+
+  const joinCode = await assignNewJoinCode(school.id);
+  res.json({ joinCode });
+});
+
+// Every coach at the school sees the same shared queue -- matches how
+// the roster itself is already shared school-wide (see lib/authz.ts).
+schoolsRouter.get("/:id/requests", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const requests = await prisma.schoolJoinRequest.findMany({
+    where: { schoolId: req.params.id, status: "PENDING" },
+    include: { squad: true },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(
+    requests.map((r) => ({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      username: r.username,
+      email: r.email,
+      squadName: r.squad.name,
+      createdAt: r.createdAt,
+    })),
+  );
+});
+
+async function findPendingRequest(schoolId: string, requestId: string) {
+  const request = await prisma.schoolJoinRequest.findUnique({ where: { id: requestId } });
+  if (!request || request.schoolId !== schoolId || request.status !== "PENDING") return null;
+  return request;
+}
+
+// Materializes the real account this request has been standing in for --
+// a User (role ATHLETE), an Athlete profile in the requested squad, and
+// a CoachAthlete row making *this* approving coach the athlete's roster
+// coach (whoever at the school actually claims them, first-to-approve),
+// exactly mirroring inviteAccept.ts's own ATHLETE-invite branch. Re-checks
+// the username/email collision at approval time, not just at submission
+// -- days could have passed, and someone else may have taken it since.
+schoolsRouter.post("/:id/requests/:reqId/approve", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const request = await findPendingRequest(req.params.id, req.params.reqId);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  const collision = await prisma.user.findFirst({ where: { OR: [{ username: request.username }, { email: request.email }] } });
+  if (collision) {
+    return res.status(409).json({
+      error: "That username or email has been taken since this request came in — reject it and ask them to request again.",
+    });
+  }
+
+  const coachId = req.user!.sub;
+  const { user, athlete } = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        username: request.username,
+        email: request.email,
+        passwordHash: request.passwordHash,
+        firstName: request.firstName,
+        lastName: request.lastName,
+        role: "ATHLETE",
+      },
+    });
+    const athlete = await tx.athlete.create({
+      data: { name: `${request.firstName} ${request.lastName}`, squadId: request.squadId, userId: user.id },
+    });
+    await tx.coachAthlete.create({ data: { coachId, athleteId: athlete.id } });
+    await tx.schoolJoinRequest.update({
+      where: { id: request.id },
+      data: { status: "APPROVED", decidedAt: new Date(), decidedByUserId: coachId },
+    });
+    return { user, athlete };
+  });
+
+  if (emailEnabled) {
+    await sendEmail({
+      to: user.email,
+      subject: "You're in! Your Relay account is ready",
+      html: `<p>Hey ${user.firstName}, your coach approved your request to join Relay. Sign in any time with the username <strong>${user.username}</strong> and the password you chose.</p><p><a href="${env.frontendUrl}/login">${env.frontendUrl}/login</a></p>`,
+    });
+  }
+
+  res.json({ athleteId: athlete.id, username: user.username });
+});
+
+// Closes the request out with no account ever created -- nothing to
+// undo, since approve is the only path that materializes a User.
+schoolsRouter.post("/:id/requests/:reqId/reject", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const request = await findPendingRequest(req.params.id, req.params.reqId);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  await prisma.schoolJoinRequest.update({
+    where: { id: request.id },
+    data: { status: "REJECTED", decidedAt: new Date(), decidedByUserId: req.user!.sub },
+  });
+  res.status(204).end();
 });

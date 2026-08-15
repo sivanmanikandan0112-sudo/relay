@@ -1,5 +1,6 @@
 import { prisma } from "./prisma.js";
 import { getSchoolAthleteIds } from "./authz.js";
+import { ensureJoinCode } from "./joinCode.js";
 
 // Shared by routes/schools.ts (a school's own members) and
 // routes/admin.ts (a super admin looking at any school) -- same shape,
@@ -18,11 +19,14 @@ export async function getSchoolDetail(schoolId: string) {
     where: { schoolId, type: "COACH_TO_SCHOOL" },
     orderBy: { createdAt: "desc" },
   });
+  const pendingRequestCount = await prisma.schoolJoinRequest.count({ where: { schoolId, status: "PENDING" } });
+  const joinCode = await ensureJoinCode(school.id, school.joinCode);
 
   return {
     id: school.id,
     name: school.name,
     location: school.location,
+    joinCode,
     coaches: coaches.map((c) => ({
       id: c.id,
       username: c.username,
@@ -32,5 +36,6 @@ export async function getSchoolDetail(schoolId: string) {
     })),
     athleteCount: athleteIds.length,
     invites,
+    pendingRequestCount,
   };
 }

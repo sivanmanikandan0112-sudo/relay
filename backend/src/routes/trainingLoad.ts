@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { recomputeReadiness } from "../lib/scoring.js";
 import { canAccessAthlete, getOwnAthleteId } from "../lib/authz.js";
+import { BACKDATE_WINDOW_DAYS, dayKey, resolveSubmissionDay } from "../lib/date.js";
 
 export const trainingLoadRouter = Router();
 
@@ -14,6 +15,12 @@ const createSchema = z.object({
   distanceMiles: z.number().min(0).max(200).optional(),
   durationMin: z.number().min(0.05).max(600), // fractional minutes, from an HH:MM:SS input
   rpe: z.number().int().min(1).max(10),
+  // "YYYY-MM-DD" -- omit for today. Same catch-up window as wellness.ts's
+  // check-in POST; see resolveSubmissionDay for exactly how far back.
+  day: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 // Same rule as wellness check-ins: a run is always logged under the
@@ -27,7 +34,7 @@ trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   const athleteId = await getOwnAthleteId(req.user!.sub);
   if (!athleteId) return res.status(403).json({ error: "No athlete profile linked to this account" });
 
-  const { runType, rpe, durationMin } = parsed.data;
+  const { runType, rpe, durationMin, day: bodyDay } = parsed.data;
   // Enforce 2 decimal places server-side too, not just in the UI.
   const distanceMiles = parsed.data.distanceMiles != null ? Math.round(parsed.data.distanceMiles * 100) / 100 : undefined;
 
@@ -37,10 +44,22 @@ trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
   // `new Date()` a moment later (see that file's comment for the failure
   // mode this avoids).
   const now = new Date();
+  const resolved = resolveSubmissionDay(now, bodyDay);
+  if (!resolved) {
+    return res.status(400).json({ error: `day must be today or within the last ${BACKDATE_WINDOW_DAYS} days, not in the future` });
+  }
+  const { day, date } = resolved;
+
   const entry = await prisma.trainingLoad.create({
-    data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin, date: now },
+    data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin, date },
   });
+
+  // Same "refresh today, and separately refresh the backdated day's own
+  // week's snapshot" reasoning as wellness.ts's POST /.
   await recomputeReadiness(athleteId, now);
+  if (day.getTime() !== dayKey(now).getTime()) {
+    await recomputeReadiness(athleteId, date);
+  }
   res.status(201).json(entry);
 });
 

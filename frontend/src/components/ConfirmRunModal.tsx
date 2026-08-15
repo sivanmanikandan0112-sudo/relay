@@ -5,12 +5,13 @@ interface ConfirmRunModalProps {
   distanceMiles?: number;
   durationMin: number;
   rpe: number;
+  dayLabel: string;
   saving: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function ConfirmRunModal({ title, distanceMiles, durationMin, rpe, saving, onCancel, onConfirm }: ConfirmRunModalProps) {
+export function ConfirmRunModal({ title, distanceMiles, durationMin, rpe, dayLabel, saving, onCancel, onConfirm }: ConfirmRunModalProps) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -31,7 +32,8 @@ export function ConfirmRunModal({ title, distanceMiles, durationMin, rpe, saving
           </div>
         </div>
         <p style={{ color: "var(--text-dim)", fontSize: 12.5, marginTop: 14 }}>
-          This logs a new run for today — you can log more than once a day if you split a workout.
+          This logs a new run for {dayLabel === "Today" ? "today" : dayLabel} — you can log more than once a
+          day if you split a workout.
         </p>
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onCancel} disabled={saving}>

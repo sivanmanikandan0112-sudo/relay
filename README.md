@@ -111,6 +111,57 @@ same two-click confirm), once it's just clutter in their invite history. This on
 `Invite` row itself; the athlete's account and their actual roster spot (`CoachAthlete`) are a
 separate, untouched relationship. `REJECTED` invites aren't clearable from either screen today.
 
+### School join code — athlete self-service, coach-approved
+
+The reverse direction from a bulk invite: instead of a coach sending an invite to a specific
+email, an athlete who knows their school's short join code requests to join it themself, from the
+public `/join` page — and a coach approves or rejects that request before any account exists.
+
+- Every `School` has a `joinCode` (6 characters, the same unambiguous alphabet as MFA backup codes
+  — excludes `0`/`O`/`1`/`I`/`L`) — short and human-typeable on purpose, unlike an `Invite.token`,
+  since a coach reads this one aloud or posts it somewhere for a whole roster rather than sending
+  it to one person. Shown on the coach's **School** tab with **Copy** and **Regenerate** actions;
+  regenerating just replaces it going forward — the old code stops resolving, but any requests
+  already submitted under it are untouched (they don't store the code itself). New schools get a
+  code at creation; any school from before this feature existed gets one lazily generated the next
+  time it's read (`ensureJoinCode` in [`lib/joinCode.ts`](backend/src/lib/joinCode.ts)).
+- `/join` (public, two steps): first `GET /api/join/:code` resolves the code to a school **name**
+  only, so a visitor confirms what they're requesting ("Request to join Lincoln High?") before
+  typing anything personal; then `POST /api/join/:code` submits their proposed name, username,
+  email, password, and squad as a `SchoolJoinRequest` row with `status: PENDING`.
+- **No `User` is created at request time** — same rule as everywhere else in this app: an account
+  only exists once someone with authority has agreed to it. The chosen password sits hashed on the
+  request row until a coach decides.
+- Since a school's roster is already shared across every coach there, pending requests are a
+  **shared queue** — any coach at the school can see and act on one (`GET /api/schools/:id/requests`
+  on the **School** tab), not just whoever's code was used. **Approve**
+  (`POST /api/schools/:id/requests/:reqId/approve`) creates the real `User` (role `ATHLETE`) +
+  `Athlete` + `CoachAthlete` in one transaction — exactly mirroring `inviteAccept.ts`'s own
+  ATHLETE-invite branch — and makes the *approving* coach that athlete's roster coach. **Reject**
+  (`POST /api/schools/:id/requests/:reqId/reject`) just closes the request out; no account ever
+  existed, nothing to undo. Approving re-checks the username/email for collisions at decision time,
+  not just at submission — days could have passed.
+- The request's squad choice is the athlete's own guess, standing in for what a coach normally
+  picks when sending a bulk invite — corrected automatically once the athlete sets their real
+  gender at first login, same as any invited athlete's initial squad (`routes/me.ts`'s
+  `PATCH /gender`).
+
+### Backdating a check-in or run
+
+An athlete's Check-in and My Runs screens both have a **LOGGING FOR** day picker (defaulting to
+Today) so a missed day can be caught up on, not just today's. The backend accepts an optional
+`day` ("YYYY-MM-DD") on `POST /api/wellness` and `POST /api/training-load`, resolved by
+[`lib/date.ts`](backend/src/lib/date.ts)'s `resolveSubmissionDay` — rejecting anything in the
+future or further back than `BACKDATE_WINDOW_DAYS` (currently 7, reusing `ACUTE_WINDOW_DAYS` from
+the scoring math rather than inventing a separate constant: a week is enough to catch up after a
+missed weekend without opening a wide-open history-editing surface, and it's already the exact
+window that drives the acute load calc). A backdated check-in still upserts on that day (one per
+athlete per day, same rule as today), and a backdated run still stacks freely with others on the
+same day (no per-day uniqueness for runs, unchanged). Submitting a backdated entry refreshes
+*today's* live readiness score as always, and additionally refreshes the backdated day's own
+week's stored `ReadinessScore` snapshot — otherwise a corrected day sitting in an earlier ISO week
+would never update the row the multi-week trend chart actually reads.
+
 ### Forgot password
 
 Same story: `/api/auth/forgot-password` generates a real, expiring reset token
@@ -242,34 +293,33 @@ or a backup code.
   a captured temp token (which only proves the password was correct) can't be used for anything
   else in the 5 minutes before it expires.
 
-### Public landing page & self-service coach signup
+### Public landing page
 
 `/` is a public landing page (`frontend/src/pages/Home.tsx`, outside `RequireAuth`) — a short pitch
-plus **Sign in** / **Get started** buttons — for anyone who lands on `relaycoach.app` cold, before
-any login exists. A signed-in visitor hitting `/` is redirected straight to their own app (Brief or
-Check-in) instead of seeing the pitch again; that redirect used to live in a dedicated
-`HomeRedirect` component and now lives in `Home.tsx` itself, since there's no longer a case where
-`/` renders anything else for a logged-out visitor.
+split into a **For coaches** and a **For athletes** card, for anyone who lands on
+`relaycoach.app` cold, before any login exists. A signed-in visitor hitting `/` is redirected
+straight to their own app (Brief or Check-in) instead of seeing the pitch again; that redirect used
+to live in a dedicated `HomeRedirect` component and now lives in `Home.tsx` itself, since there's no
+longer a case where `/` renders anything else for a logged-out visitor.
 
-**Get started** leads to `/signup` (`POST /api/auth/signup`, public, rate-limited via the new
-`signupLimiter`) — real, self-service account creation, no invite required. It always creates a
-`role: COACH` account (athletes still only ever join via a coach's invite — see above; nothing
-about the invite model changed) and the coach **picks their own password** at signup, same
-validation as everywhere else a password is set (`AcceptInvite.tsx`'s form, min 8 characters) —
-unlike `create-account.ts`, which generates one. This is the first and only public,
-credential-free way to create an account in this app; every other path (CLI script,
-`--make-super-admin`, athlete/coach invites) still requires either shell access to the deployment
-or an existing member inviting you.
+The hero's **Get started** button, and the athlete card's own CTA, both lead to `/join` — the
+school join-code flow above. That's deliberate: **there is no public, self-service way to create a
+coach account.** An earlier version of this app had one (`POST /api/auth/signup`); it was removed
+on purpose — coach accounts are now only ever created by an admin running
+[`create-account.ts`](backend/scripts/create-account.ts) or by an existing coach's
+`invite-coach` (see [Schools](#schools--shared-roster-visibility-across-a-coaching-staff) above).
+The coach card on the landing page is informational only, with no button, and points a coach who
+already has an account at **Sign in**.
 
 ### Google sign-in
 
 Optional, additional login method — **linked to an existing account**, not a signup bypass.
 Signing in with Google never creates an account by itself: `POST /api/auth/google` 404s for any
 Google identity that isn't already linked to a `User`, with a message pointing the visitor back to
-password sign-in. This was a deliberate choice over auto-provisioning, for the same reason athlete
-signup stays invite-only — account creation in this app is always a decision by either the person
-themself (coach signup, above) or their coach (athlete invite), never an incidental side effect of
-which button someone happened to click.
+password sign-in. This was a deliberate choice over auto-provisioning, matching every other
+account-creation path in this app: an account only ever exists once someone with real authority
+has agreed to it (an admin, an inviting coach, or an approving coach on a join request), never as
+an incidental side effect of which button someone happened to click.
 
 - **Linking**: from **My Profile**, `POST /api/me/google-link` verifies a real Google ID token
   server-side (`google-auth-library`'s `OAuth2Client.verifyIdToken`,
@@ -300,10 +350,15 @@ which button someone happened to click.
 - **CoachAthlete** — many-to-many roster assignment between coach `User`s and `Athlete`s
 - **School** — an optional shared-visibility group for coaches (see
   [Schools](#schools--shared-roster-visibility-across-a-coaching-staff)); a `User` with
-  `role: COACH` may optionally belong to one, via `User.schoolId`
+  `role: COACH` may optionally belong to one, via `User.schoolId`. Also holds a short, unique
+  `joinCode` athletes use to self-request joining (see below)
 - **Invite** — an email + status + type (`ATHLETE` or `COACH_TO_SCHOOL`) + a target (squad or
   school) + a unique accept token/expiry; accepting one for real (`/accept-invite/:token`) creates
   the account (and, for `ATHLETE`, the `Athlete`/`CoachAthlete` rows too)
+- **SchoolJoinRequest** — the reverse of an `Invite`: an athlete's proposed name/username/email/
+  password (hashed) + squad + status (`PENDING`/`APPROVED`/`REJECTED`), submitted via a school's
+  `joinCode` at the public `/join` page. No `User` exists until a coach at that school approves it
+  (see [School join code](#school-join-code--athlete-self-service-coach-approved) above)
 - **PasswordResetToken** — simulated forgot-password flow
 - **WellnessEntry** — daily self-reported sleep, soreness, mood, energy, motivation (1–5 each) plus
   an optional note. An athlete can only ever write their own (the athlete ID comes from the JWT,
@@ -559,7 +614,8 @@ The integration and e2e tiers both run against a real `relay_test` Postgres data
 ## REST API
 
 All routes are under `/api`. Aside from `/api/auth/*`, `/api/invite-accept/:token` (GET/POST, not
-`/attach`), and `/api/health`, every route requires an `Authorization: Bearer <token>` header.
+`/attach`), `/api/join/:code` (GET/POST), and `/api/health`, every route requires an
+`Authorization: Bearer <token>` header.
 Coach-scoped routes filter to whatever `getCoachAthleteIds` resolves to (see
 [Schools](#schools--shared-roster-visibility-across-a-coaching-staff)) — a solo coach's own
 `CoachAthlete` roster, or every athlete rostered by anyone at their school; requesting an athlete
@@ -568,7 +624,6 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/auth/login` | Log in with username + password. Returns a JWT, or `{mfaRequired, tempToken}` if 2FA is enabled |
-| POST | `/api/auth/signup` | Public, rate-limited: create a real, self-service coach account with a chosen password. Returns a real session |
 | POST | `/api/auth/google` | Public, rate-limited: sign in with a verified Google ID token. 404s if that identity isn't already linked to an account; otherwise same `{mfaRequired, tempToken}`-or-session shape as `/login` |
 | POST | `/api/auth/mfa/verify` | Complete a two-step login: `{tempToken, code}` (TOTP or backup code) → real JWT (public, rate-limited) |
 | POST | `/api/auth/forgot-password` | Issues a reset token; emails it if configured, else returns it directly (rate-limited) |
@@ -592,6 +647,12 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/schools/mine` | Your own school (member coaches, shared roster size, pending coach invites) — null if solo |
 | GET | `/api/schools/:id` | A school's detail (member or super admin only) |
 | POST | `/api/schools/:id/invite-coach` | Invite a coach into this school by email (member or super admin only) |
+| POST | `/api/schools/:id/regenerate-code` | Replace this school's join code (member or super admin only) |
+| GET | `/api/schools/:id/requests` | Pending `SchoolJoinRequest`s for this school, shared across every coach there (member or super admin only) |
+| POST | `/api/schools/:id/requests/:reqId/approve` | Create the real athlete account + roster row for a pending request (member or super admin only) |
+| POST | `/api/schools/:id/requests/:reqId/reject` | Close a pending request out with no account created (member or super admin only) |
+| GET | `/api/join/:code` | Public: resolve a school join code to its name, no auth |
+| POST | `/api/join/:code` | Public, rate-limited: submit a `SchoolJoinRequest` — never creates an account, no auth |
 | GET | `/api/admin/overview` \| `/coaches` \| `/coaches/:id` \| `/schools` \| `/schools/:id` \| `/users` \| `/users/:id` | Read-only, system-wide, `/users` supports `?q=` search (super admin only) |
 | POST | `/api/admin/users/:id/reset-password` | Send the target a password reset email (super admin only) |
 | POST | `/api/admin/users/:id/reset-mfa` | Clear the target's 2FA state, notify them by email (super admin only) |
@@ -607,9 +668,9 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/injuries?squadId=&status=` | List injuries, roster-scoped (coach only) |
 | POST | `/api/injuries` | Log an injury (coach, roster-scoped) |
 | PATCH | `/api/injuries/:id` | Update injury status (coach, roster-scoped) |
-| POST | `/api/wellness` | Submit a check-in for yourself (athlete only; recomputes readiness) — 201 if today's first, 200 if it overwrote today's existing entry |
+| POST | `/api/wellness` | Submit a check-in for yourself (athlete only; recomputes readiness) — 201 if that day's first, 200 if it overwrote that day's existing entry. Optional `day` ("YYYY-MM-DD") backdates it, within the allowed catch-up window |
 | GET | `/api/wellness/athlete/:athleteId` | Wellness history |
-| POST | `/api/training-load` | Log a run for yourself (athlete only; recomputes readiness) |
+| POST | `/api/training-load` | Log a run for yourself (athlete only; recomputes readiness). Optional `day` backdates it, same window as `/api/wellness` |
 | GET | `/api/training-load/athlete/:athleteId` | Run history |
 | DELETE | `/api/training-load/:id` | Delete your own logged run (athlete only) |
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |

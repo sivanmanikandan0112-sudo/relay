@@ -40,13 +40,16 @@ export function Home() {
           </p>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link to="/signup" className="btn-primary" style={{ textDecoration: "none", padding: "10px 22px" }}>
+            <Link to="/join" className="btn-primary" style={{ textDecoration: "none", padding: "10px 22px" }}>
               Get started
             </Link>
             <Link to="/login" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 22px" }}>
               Sign in
             </Link>
           </div>
+          <p style={{ textAlign: "center", color: "var(--text-faint)", fontSize: 11.5, marginTop: 10 }}>
+            Athlete with a school join code? That's "Get started." Coaches — see below.
+          </p>
         </div>
 
         <p className="home-audience-lede">One app, built differently for each side of the roster.</p>
@@ -68,9 +71,13 @@ export function Home() {
               ))}
             </div>
             <div className="audience-cta">
-              <Link to="/signup" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", padding: "9px 18px" }}>
-                Create a coach account
-              </Link>
+              <p className="fine">
+                Coach accounts are set up by your Relay admin, not self-serve — reach out to get one
+                started.{" "}
+                <Link to="/login" style={{ color: "var(--text-faint)", textDecoration: "underline" }}>
+                  Already have an account?
+                </Link>
+              </p>
             </div>
           </div>
 
@@ -90,10 +97,13 @@ export function Home() {
               ))}
             </div>
             <div className="audience-cta">
-              <p className="fine">
-                Athletes join by invite from their coach — there's no self sign-up here.{" "}
+              <Link to="/join" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", padding: "9px 18px" }}>
+                Join with your school code
+              </Link>
+              <p className="fine" style={{ marginTop: 10 }}>
+                Your coach has it, or already invited you directly —{" "}
                 <Link to="/login" style={{ color: "var(--text-faint)", textDecoration: "underline" }}>
-                  Already have an account?
+                  already have an account?
                 </Link>
               </p>
             </div>

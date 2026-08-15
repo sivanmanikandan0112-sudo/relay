@@ -60,6 +60,62 @@ describe("POST /api/training-load", () => {
       .send({ runType: "Easy", durationMin: 30, rpe: 15 });
     expect(res.status).toBe(400);
   });
+
+  it("accepts a backdated day, storing the run under that day (not today) and still recomputing", async () => {
+    const { athlete } = await createAthlete({ username: "ath.runbackdate", firstName: "Ath", lastName: "RunBackdate", squad: "BOYS" });
+    const token = await loginAs("ath.runbackdate");
+    const dayStr = daysAgo(4).toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "Easy 5mi", distanceMiles: 5, durationMin: 50, rpe: 4, day: dayStr });
+    expect(res.status).toBe(201);
+    expect(new Date(res.body.date).toISOString().slice(0, 10)).toBe(dayStr);
+
+    const score = await latestScore(athlete.id);
+    expect(score).not.toBeNull();
+  });
+
+  it("allows more than one backdated run on the same past day -- no per-day uniqueness for runs", async () => {
+    await createAthlete({ username: "ath.runbackdatetwice", firstName: "Ath", lastName: "RunBackdateTwice", squad: "BOYS" });
+    const token = await loginAs("ath.runbackdatetwice");
+    const dayStr = daysAgo(2).toISOString().slice(0, 10);
+
+    const first = await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "AM shakeout", durationMin: 20, rpe: 2, day: dayStr });
+    const second = await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "PM workout", durationMin: 45, rpe: 7, day: dayStr });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.id).not.toBe(first.body.id);
+  });
+
+  it("rejects a future day", async () => {
+    await createAthlete({ username: "ath.runfuture", firstName: "Ath", lastName: "RunFuture", squad: "BOYS" });
+    const token = await loginAs("ath.runfuture");
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const res = await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "Easy", durationMin: 30, rpe: 4, day: tomorrow });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a day further back than the allowed catch-up window", async () => {
+    await createAthlete({ username: "ath.runtoolold", firstName: "Ath", lastName: "RunTooOld", squad: "BOYS" });
+    const token = await loginAs("ath.runtoolold");
+    const tooLongAgo = daysAgo(30).toISOString().slice(0, 10);
+    const res = await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "Easy", durationMin: 30, rpe: 4, day: tooLongAgo });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("DELETE /api/training-load/:id", () => {

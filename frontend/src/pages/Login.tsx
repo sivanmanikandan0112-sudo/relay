@@ -154,8 +154,8 @@ export function Login() {
         <Link to="/forgot-password" style={{ fontSize: 12.5, color: "var(--text-dim)", textAlign: "center" }}>
           Forgot password?
         </Link>
-        <Link to="/signup" style={{ fontSize: 12.5, color: "var(--text-dim)", textAlign: "center" }}>
-          New coach? Create an account
+        <Link to="/join" style={{ fontSize: 12.5, color: "var(--text-dim)", textAlign: "center" }}>
+          New athlete? Join with your school code
         </Link>
       </form>
     </div>

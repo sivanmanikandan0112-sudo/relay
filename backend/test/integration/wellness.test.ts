@@ -138,6 +138,81 @@ describe("POST /api/wellness", () => {
     expect(res.status).toBe(403);
   });
 
+  it("accepts a backdated day, storing it under that day and not today", async () => {
+    const { athlete } = await createAthlete({ username: "ath.backdate", firstName: "Ath", lastName: "Backdate", squad: "GIRLS" });
+    const token = await loginAs("ath.backdate");
+    const threeDaysAgo = daysAgo(3);
+    const dayStr = threeDaysAgo.toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3, day: dayStr });
+    expect(res.status).toBe(201);
+    expect(new Date(res.body.day).toISOString().slice(0, 10)).toBe(dayStr);
+    expect(new Date(res.body.day).getTime()).not.toBe(dayKey(new Date()).getTime());
+
+    // Backdating refreshes its own week's ReadinessScore snapshot in
+    // addition to today's live one -- two rows, not one, once the
+    // backdated day falls in a different ISO week than today could.
+    const score = await prisma.readinessScore.findMany({ where: { athleteId: athlete.id } });
+    expect(score.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("resubmitting the same backdated day overwrites that day's row, same as today's upsert rule", async () => {
+    const { athlete } = await createAthlete({ username: "ath.backdate.twice", firstName: "Ath", lastName: "BackdateTwice", squad: "GIRLS" });
+    const token = await loginAs("ath.backdate.twice");
+    const dayStr = daysAgo(2).toISOString().slice(0, 10);
+
+    const first = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 2, soreness: 4, mood: 2, energy: 2, motivation: 2, day: dayStr });
+    expect(first.status).toBe(201);
+
+    const second = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 5, soreness: 1, mood: 5, energy: 5, motivation: 5, day: dayStr });
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+
+    const all = await prisma.wellnessEntry.findMany({ where: { athleteId: athlete.id } });
+    expect(all).toHaveLength(1);
+  });
+
+  it("rejects a future day", async () => {
+    await createAthlete({ username: "ath.future", firstName: "Ath", lastName: "Future", squad: "GIRLS" });
+    const token = await loginAs("ath.future");
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const res = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3, day: tomorrow });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a day further back than the allowed catch-up window", async () => {
+    await createAthlete({ username: "ath.toooldbackdate", firstName: "Ath", lastName: "TooOld", squad: "GIRLS" });
+    const token = await loginAs("ath.toooldbackdate");
+    const tooLongAgo = daysAgo(30).toISOString().slice(0, 10);
+    const res = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3, day: tooLongAgo });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a malformed day string", async () => {
+    await createAthlete({ username: "ath.malformedday", firstName: "Ath", lastName: "Malformed", squad: "GIRLS" });
+    const token = await loginAs("ath.malformedday");
+    const res = await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3, day: "not-a-date" });
+    expect(res.status).toBe(400);
+  });
+
   it("actually changes the stored score end-to-end, not just returns 201", async () => {
     const { athlete } = await createAthlete({ username: "ath.reacts", firstName: "Ath", lastName: "Reacts", squad: "GIRLS" });
     const token = await loginAs("ath.reacts");

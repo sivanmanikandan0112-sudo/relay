@@ -12,6 +12,7 @@ import { trainingLoadRouter } from "./routes/trainingLoad.js";
 import { invitesRouter } from "./routes/invites.js";
 import { inviteAcceptRouter } from "./routes/inviteAccept.js";
 import { schoolsRouter } from "./routes/schools.js";
+import { schoolJoinRouter } from "./routes/schoolJoin.js";
 import { adminRouter } from "./routes/admin.js";
 import { mfaRouter } from "./routes/mfa.js";
 
@@ -45,5 +46,6 @@ app.use("/api/training-load", trainingLoadRouter);
 app.use("/api/invites", invitesRouter);
 app.use("/api/invite-accept", inviteAcceptRouter);
 app.use("/api/schools", schoolsRouter);
+app.use("/api/join", schoolJoinRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/mfa", mfaRouter);

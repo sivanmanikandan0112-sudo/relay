@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type SchoolDetail } from "../lib/api";
+import { api, type SchoolDetail, type SchoolJoinRequestSummary } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
 export function School() {
@@ -22,11 +22,72 @@ export function School() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  const [requests, setRequests] = useState<SchoolJoinRequestSummary[]>([]);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
   function refresh() {
     api.mySchool().then((res) => setSchool(res.school));
   }
 
+  function refreshRequests(schoolId: string) {
+    api.schoolJoinRequests(schoolId).then(setRequests);
+  }
+
   useEffect(refresh, []);
+  useEffect(() => {
+    if (school) refreshRequests(school.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [school?.id]);
+
+  async function handleRegenerateCode() {
+    if (!school) return;
+    setRegenerating(true);
+    try {
+      await api.regenerateJoinCode(school.id);
+      refresh();
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  async function handleCopyCode() {
+    if (!school) return;
+    await navigator.clipboard.writeText(school.joinCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
+
+  async function handleApprove(reqId: string) {
+    if (!school) return;
+    setDecidingId(reqId);
+    setRequestsError(null);
+    try {
+      await api.approveJoinRequest(school.id, reqId);
+      refreshRequests(school.id);
+      refresh();
+    } catch (err) {
+      setRequestsError(err instanceof Error ? err.message : "Couldn't approve that request");
+    } finally {
+      setDecidingId(null);
+    }
+  }
+
+  async function handleReject(reqId: string) {
+    if (!school) return;
+    setDecidingId(reqId);
+    setRequestsError(null);
+    try {
+      await api.rejectJoinRequest(school.id, reqId);
+      refreshRequests(school.id);
+    } catch (err) {
+      setRequestsError(err instanceof Error ? err.message : "Couldn't reject that request");
+    } finally {
+      setDecidingId(null);
+    }
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -224,6 +285,74 @@ export function School() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="panel">
+        <h2>Athlete join code</h2>
+        <p style={{ color: "var(--text-dim)", fontSize: 12.5, marginTop: -6, marginBottom: 12 }}>
+          Share this code with your athletes — they enter it at relaycoach.app/join to request joining {school.name}.
+          Nothing happens automatically: each request sits below until a coach here approves it.
+        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 22,
+              letterSpacing: 4,
+              background: "var(--panel-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "8px 16px",
+            }}
+          >
+            {school.joinCode}
+          </span>
+          <button className="btn-secondary" onClick={handleCopyCode}>
+            {codeCopied ? "Copied!" : "Copy"}
+          </button>
+          <button className="btn-secondary" disabled={regenerating} onClick={handleRegenerateCode}>
+            {regenerating ? "Regenerating…" : "Regenerate"}
+          </button>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>
+          Pending join requests {requests.length > 0 && <span className="injury-pill">{requests.length}</span>}
+        </h2>
+        {requestsError && (
+          <p className="error" style={{ marginBottom: 8 }}>
+            {requestsError}
+          </p>
+        )}
+        {requests.length === 0 ? (
+          <p style={{ color: "var(--text-dim)", fontSize: 13 }}>No pending requests right now.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {requests.map((r) => (
+              <div key={r.id} className="run-item" style={{ padding: "12px 16px" }}>
+                <div className="run-row">
+                  <span className="run-type">
+                    {r.firstName} {r.lastName} <span className="run-meta">({r.squadName === "GIRLS" ? "Girls" : "Boys"})</span>
+                  </span>
+                </div>
+                <div className="run-row" style={{ marginTop: 4 }}>
+                  <span className="run-meta">
+                    {r.username} · {r.email}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button className="btn-primary" disabled={decidingId === r.id} onClick={() => handleApprove(r.id)}>
+                    {decidingId === r.id ? "Working…" : "Approve"}
+                  </button>
+                  <button className="btn-secondary" disabled={decidingId === r.id} onClick={() => handleReject(r.id)}>
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="panel">
