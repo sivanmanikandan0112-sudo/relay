@@ -1,21 +1,15 @@
-import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
+import { randomUnambiguousString } from "./randomCode.js";
 
-// Same unbiased 32-char alphabet as lib/backupCodes.ts (excludes
-// 0/O/1/I/L -- visually ambiguous when read off a whiteboard or shouted
-// across a locker room, which is exactly how a coach hands this out).
-// 6 characters keeps it short enough to type without a dash, while still
-// giving 32^6 (~1 billion) possible codes -- collisions are handled by
+// Same unambiguous alphabet as lib/backupCodes.ts (excludes 0/O/1/I/L --
+// visually ambiguous when read off a whiteboard or shouted across a
+// locker room, which is exactly how a coach hands this out). 6
+// characters keeps it short enough to type without a dash, while still
+// giving 31^6 (~887 million) possible codes -- collisions are handled by
 // retrying below regardless, not relied on to never happen.
-const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_LENGTH = 6;
 const MAX_ATTEMPTS = 5;
-
-function randomCode(): string {
-  const bytes = crypto.randomBytes(CODE_LENGTH);
-  return Array.from(bytes, (b) => ALPHABET[b % 32]).join("");
-}
 
 /**
  * Generates a fresh, guaranteed-unique join code and saves it on the
@@ -28,7 +22,7 @@ function randomCode(): string {
  */
 export async function assignNewJoinCode(schoolId: string): Promise<string> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const code = randomCode();
+    const code = randomUnambiguousString(CODE_LENGTH);
     try {
       await prisma.school.update({ where: { id: schoolId }, data: { joinCode: code } });
       return code;

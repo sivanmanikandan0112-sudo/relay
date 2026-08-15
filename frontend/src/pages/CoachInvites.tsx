@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, type Invite, type Squad } from "../lib/api";
+import { api, type Invite } from "../lib/api";
 
 const STATUS_META: Record<Invite["status"], { label: string; color: string }> = {
   PENDING: { label: "Waiting", color: "#d9a53c" },
   ACCEPTED: { label: "Accepted", color: "#4ea373" },
   REJECTED: { label: "Rejected", color: "#cf5236" },
 };
-
-const SQUAD_LABEL: Record<string, string> = { GIRLS: "Girls", BOYS: "Boys" };
 
 function parseEmails(raw: string): string[] {
   return raw
@@ -22,8 +20,6 @@ function acceptUrl(token: string): string {
 
 export function CoachInvites() {
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [squads, setSquads] = useState<Squad[]>([]);
-  const [squadId, setSquadId] = useState("");
   const [raw, setRaw] = useState("");
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -37,23 +33,17 @@ export function CoachInvites() {
   }
 
   useEffect(refresh, []);
-  useEffect(() => {
-    api.squads().then((s) => {
-      setSquads(s);
-      setSquadId((current) => current || s[0]?.id || "");
-    });
-  }, []);
 
   const emails = parseEmails(raw);
   const invalid = emails.filter((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 
   async function handleSend() {
-    if (emails.length === 0 || invalid.length > 0 || !squadId) return;
+    if (emails.length === 0 || invalid.length > 0) return;
     setSending(true);
     setError(null);
     setFeedback(null);
     try {
-      const res = await api.bulkInvite(emails, squadId);
+      const res = await api.bulkInvite(emails);
       setFeedback(
         `${res.emailSent ? "Emailed" : "Created"} ${res.created} invite${res.created === 1 ? "" : "s"}` +
           (res.skipped > 0 ? ` · ${res.skipped} already pending or accepted, skipped` : "") +
@@ -97,29 +87,15 @@ export function CoachInvites() {
       <p className="eyebrow-mono">ROSTER</p>
       <h1 className="page-title">Invite athletes</h1>
       <p className="page-subtitle">
-        Paste one email per line (or comma-separated) to bulk-invite athletes to a squad. If email sending isn't
-        configured, nothing is actually emailed — copy each invite's link below and share it directly (text,
-        email, whatever) instead. Either way, status below only changes when a real athlete actually follows
-        that link and creates their account.
+        Paste one email per line (or comma-separated) to bulk-invite athletes. Each one picks their own gender when
+        they accept — same question as everywhere else in the app — and gets sorted into the matching squad from
+        that, not a guess made here. If email sending isn't configured, nothing is actually emailed — copy each
+        invite's link below and share it directly (text, email, whatever) instead. Either way, status below only
+        changes when a real athlete actually follows that link and creates their account.
       </p>
 
       <div className="panel" style={{ marginTop: 0 }}>
         <h2>Bulk invite</h2>
-        <label className="field-hint" style={{ display: "block", marginBottom: 4, color: "var(--text-dim-2)" }}>
-          Squad
-        </label>
-        <select
-          className="ath-input"
-          style={{ marginBottom: 12 }}
-          value={squadId}
-          onChange={(e) => setSquadId(e.target.value)}
-        >
-          {squads.map((s) => (
-            <option key={s.id} value={s.id}>
-              {SQUAD_LABEL[s.name] ?? s.name}
-            </option>
-          ))}
-        </select>
         <textarea
           className="ath-textarea"
           style={{ minHeight: 100 }}
@@ -137,7 +113,7 @@ export function CoachInvites() {
         <button
           className="btn-primary"
           style={{ marginTop: 12 }}
-          disabled={sending || emails.length === 0 || invalid.length > 0 || !squadId}
+          disabled={sending || emails.length === 0 || invalid.length > 0}
           onClick={handleSend}
         >
           {sending ? "Sending…" : `Send ${emails.length || ""} invite${emails.length === 1 ? "" : "s"}`.trim()}

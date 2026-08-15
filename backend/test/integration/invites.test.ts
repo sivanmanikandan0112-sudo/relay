@@ -28,6 +28,31 @@ async function createInvite(opts: {
   });
 }
 
+describe("GET /api/invites", () => {
+  it("only returns this coach's ATHLETE invites -- never their own COACH_TO_SCHOOL invites", async () => {
+    const coach = await createCoach({ username: "coach.invitelist", firstName: "Invite", lastName: "List" });
+    const squad = await ensureSquad("GIRLS");
+    await createInvite({ email: "athlete@example.com", invitedById: coach.id, squadId: squad.id });
+    await prisma.invite.create({
+      data: {
+        email: "othercoach@example.com",
+        invitedById: coach.id,
+        type: "COACH_TO_SCHOOL",
+        status: "PENDING",
+        token: crypto.randomBytes(24).toString("hex"),
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      },
+    });
+    const token = await loginAs("coach.invitelist");
+
+    const res = await request(app).get("/api/invites").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].email).toBe("athlete@example.com");
+    expect(res.body[0].type).toBe("ATHLETE");
+  });
+});
+
 describe("DELETE /api/invites/:id", () => {
   it("removes a PENDING invite", async () => {
     const coach = await createCoach({ username: "coach.del.pending", firstName: "Del", lastName: "Pending" });

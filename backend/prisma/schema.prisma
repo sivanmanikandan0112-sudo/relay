@@ -190,14 +190,14 @@ model SchoolJoinRequest {
   username        String
   email           String
   passwordHash    String
-  // Which of the two training squads this athlete expects to join --
-  // the athlete's own guess, standing in for what a coach would normally
-  // pick when sending a bulk Invite (see routes/invites.ts). Corrected
-  // automatically once they set their real gender at first login, same
-  // as any invited athlete's initial squad (see routes/me.ts's PATCH
-  // /gender) -- this is only ever a starting point, not a final answer.
-  squad           Squad             @relation(fields: [squadId], references: [id])
-  squadId         String
+  // Asked directly at /join, same as the post-login gender gate every
+  // other athlete eventually hits (routes/me.ts's PATCH /gender) --
+  // approving this request sets Athlete.gender from it immediately, so
+  // an athlete who came in this way never hits that gate at all, and the
+  // matching squad (see lib/gender.ts's GENDER_TO_SQUAD) is derived the
+  // same way a coach's own bulk-invite squad choice would be, just from
+  // the athlete's own answer instead of a coach picking for them.
+  gender          Gender            @default(PREFER_NOT_TO_SAY)
   status          JoinRequestStatus @default(PENDING)
   createdAt       DateTime          @default(now())
   decidedAt       DateTime?
@@ -261,11 +261,10 @@ model PasswordResetToken {
 }
 
 model Squad {
-  id           String              @id @default(cuid())
-  name         SquadName           @unique
-  athletes     Athlete[]
-  invites      Invite[]
-  joinRequests SchoolJoinRequest[]
+  id       String    @id @default(cuid())
+  name     SquadName @unique
+  athletes Athlete[]
+  invites  Invite[]
 }
 
 model Athlete {

@@ -1,9 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type InviteDetails } from "../lib/api";
+import { api, type Gender, type InviteDetails } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
-const SQUAD_LABEL: Record<string, string> = { GIRLS: "the girls squad", BOYS: "the boys squad" };
+// Same options/order as GenderGate.tsx and Join.tsx -- an invited
+// athlete answers this once, here, instead of hitting the post-login
+// gender gate a second time (accepting sets Athlete.gender straight from
+// this answer -- see routes/inviteAccept.ts).
+const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
+  { value: "FEMALE", label: "Female" },
+  { value: "MALE", label: "Male" },
+  { value: "NONBINARY", label: "Non-binary" },
+  { value: "PREFER_NOT_TO_SAY", label: "Prefer not to say" },
+];
 
 export function AcceptInvite() {
   const { token } = useParams<{ token: string }>();
@@ -18,6 +27,7 @@ export function AcceptInvite() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [gender, setGender] = useState<Gender | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,6 +43,10 @@ export function AcceptInvite() {
     e.preventDefault();
     if (!token) return;
     setError(null);
+    if (invite?.type === "ATHLETE" && !gender) {
+      setError("Pick a gender to continue");
+      return;
+    }
     if (password !== confirm) {
       setError("Passwords don't match");
       return;
@@ -48,6 +62,7 @@ export function AcceptInvite() {
         password,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        ...(gender ? { gender } : {}),
       });
       setSession(authToken, user);
       navigate("/", { replace: true });
@@ -144,10 +159,7 @@ export function AcceptInvite() {
     );
   }
 
-  const joinLabel =
-    invite.type === "COACH_TO_SCHOOL"
-      ? `join ${invite.schoolName ?? "their school"} as a coach`
-      : `join${invite.squadName ? ` ${SQUAD_LABEL[invite.squadName]}` : " Relay"}`;
+  const joinLabel = invite.type === "COACH_TO_SCHOOL" ? `join ${invite.schoolName ?? "their school"} as a coach` : "join the team";
 
   return (
     <div className="login-screen">
@@ -164,6 +176,24 @@ export function AcceptInvite() {
           Last name
           <input value={lastName} onChange={(e) => setLastName(e.target.value)} type="text" required />
         </label>
+        {invite.type === "ATHLETE" && (
+          <div>
+            <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 6 }}>Gender</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {GENDER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`pill-btn ${gender === opt.value ? "selected" : ""}`}
+                  style={{ width: "100%", height: 38, textAlign: "left", padding: "0 12px" }}
+                  onClick={() => setGender(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} type="text" required />

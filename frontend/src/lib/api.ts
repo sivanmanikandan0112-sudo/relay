@@ -102,10 +102,10 @@ export const api = {
   deleteRun: (id: string) => request<void>(`/training-load/${id}`, { method: "DELETE" }),
 
   invites: () => request<Invite[]>("/invites"),
-  bulkInvite: (emails: string[], squadId: string) =>
+  bulkInvite: (emails: string[]) =>
     request<{ created: number; skipped: number; invites: Invite[]; emailSent: boolean }>("/invites/bulk", {
       method: "POST",
-      body: JSON.stringify({ emails, squadId }),
+      body: JSON.stringify({ emails }),
     }),
   cancelInvite: (id: string) => request<void>(`/invites/${id}`, { method: "DELETE" }),
 
@@ -373,7 +373,6 @@ export interface Invite {
 export interface InviteDetails {
   email: string;
   type: InviteType;
-  squadName: "GIRLS" | "BOYS" | null;
   schoolName: string | null;
   coachName: string;
   // COACH_TO_SCHOOL only -- whether this email already has an account.
@@ -387,6 +386,10 @@ export interface AcceptInviteInput {
   password: string;
   firstName: string;
   lastName: string;
+  // Required for an ATHLETE invite (unused for COACH_TO_SCHOOL) -- same
+  // question as the post-login gender gate; determines the athlete's
+  // squad directly instead of a coach guessing at invite time.
+  gender?: Gender;
 }
 
 export interface School {
@@ -417,7 +420,7 @@ export interface SchoolJoinRequestSummary {
   lastName: string;
   username: string;
   email: string;
-  squadName: "GIRLS" | "BOYS";
+  gender: Gender;
   createdAt: string;
 }
 
@@ -427,7 +430,7 @@ export interface JoinRequestInput {
   username: string;
   email: string;
   password: string;
-  squad: "GIRLS" | "BOYS";
+  gender: Gender;
 }
 
 export interface AdminOverview {

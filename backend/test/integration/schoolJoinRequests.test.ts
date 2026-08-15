@@ -21,7 +21,7 @@ const validRequestBody = {
   username: "new.athlete.request",
   email: "new.athlete@example.com",
   password: "TestPass123!",
-  squad: "GIRLS",
+  gender: "FEMALE",
 };
 
 describe("GET /api/join/:code", () => {
@@ -140,7 +140,7 @@ describe("GET /api/schools/:id/requests", () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].username).toBe("new.athlete.request");
-    expect(res.body[0].squadName).toBe("GIRLS");
+    expect(res.body[0].gender).toBe("FEMALE");
   });
 
   it("403s a coach who isn't a member of that school", async () => {
@@ -170,7 +170,12 @@ describe("POST /api/schools/:id/requests/:reqId/approve", () => {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { username: "new.athlete.request" } });
     expect(user.role).toBe("ATHLETE");
-    const athlete = await prisma.athlete.findUniqueOrThrow({ where: { userId: user.id } });
+    const athlete = await prisma.athlete.findUniqueOrThrow({ where: { userId: user.id }, include: { squad: true } });
+    // Gender was asked directly at /join (FEMALE in validRequestBody) --
+    // approval sets it straight on the Athlete, and derives the matching
+    // squad from it, same mapping routes/me.ts's gender gate would use.
+    expect(athlete.gender).toBe("FEMALE");
+    expect(athlete.squad.name).toBe("GIRLS");
     const roster = await prisma.coachAthlete.findUnique({ where: { coachId_athleteId: { coachId: coach.id, athleteId: athlete.id } } });
     expect(roster).not.toBeNull();
 

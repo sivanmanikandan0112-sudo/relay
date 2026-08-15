@@ -1,3 +1,15 @@
+// Patches Express's router so an async route handler that throws (or
+// whose returned promise rejects) is automatically forwarded to the
+// error-handling middleware below, instead of becoming an unhandled
+// promise rejection. Express 4 (what this app runs) does NOT do this on
+// its own -- without this, any uncaught error in *any* async route
+// handler anywhere in this app takes down the whole Node process, not
+// just that one request (this actually happened in production: a
+// Resend send failure inside routes/schools.ts's approve-request route
+// crashed the entire API for every user until Railway auto-restarted
+// it). Must be imported before the route files below register their
+// handlers -- it works by patching Express's Layer/Router internals.
+import "express-async-errors";
 import express from "express";
 import cors from "cors";
 import { authRouter } from "./routes/auth.js";
@@ -49,3 +61,17 @@ app.use("/api/schools", schoolsRouter);
 app.use("/api/join", schoolJoinRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/mfa", mfaRouter);
+
+// Last-resort catch-all: anything express-async-errors forwards here (or
+// any synchronous throw in a non-async handler) becomes a clean 500,
+// same { error: string } shape as every other 4xx/5xx in this app,
+// instead of an unhandled rejection that takes the whole process down.
+// Must be registered last -- Express identifies error middleware by its
+// 4-argument signature, and only routes/middleware registered *before*
+// this one are covered by it.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[unhandled route error]", err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Something went wrong. Please try again." });
+});

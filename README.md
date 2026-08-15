@@ -83,14 +83,19 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
 
 ### Bulk athlete invites — real signups, email optional
 
-Coaches bulk-invite athletes to a specific squad by email from the **Invite** tab. Accepting an
-invite is a **real account-creation flow**, not simulated: each invite gets a unique, 14-day
-token (`Invite.token`/`expiresAt`); an invited athlete follows the link built from it —
-`/accept-invite/:token`, public, no login required — to a page that shows who invited them and
-lets them pick their own username/password. Submitting it creates a real `User` + `Athlete` row,
-adds them to the inviting coach's roster in the invited squad, marks the invite `ACCEPTED`, and
+Coaches bulk-invite athletes by email from the **Invite** tab — no squad choice at invite time.
+Accepting an invite is a **real account-creation flow**, not simulated: each invite gets a unique,
+14-day token (`Invite.token`/`expiresAt`); an invited athlete follows the link built from it —
+`/accept-invite/:token`, public, no login required — to a page that shows who invited them, asks
+their gender (same question and options as the post-login gender gate), and lets them pick their
+own username/password. Submitting it creates a real `User` + `Athlete` row — gender set directly
+from their answer, squad derived from it (see [`lib/gender.ts`](backend/src/lib/gender.ts)'s
+`GENDER_TO_SQUAD`) — adds them to the inviting coach's roster, marks the invite `ACCEPTED`, and
 logs them straight in (same response shape as `/api/auth/login`) — see
-[`routes/inviteAccept.ts`](backend/src/routes/inviteAccept.ts).
+[`routes/inviteAccept.ts`](backend/src/routes/inviteAccept.ts). Asking the athlete instead of the
+coach removes a guess a coach was always making on the athlete's behalf before even knowing who'd
+click the link, and an athlete who accepts this way never hits the gender gate again afterward,
+since it's already on file.
 
 Whether the invite email actually *sends* depends on whether [`lib/email.ts`](backend/src/lib/email.ts)
 has a real provider configured (`RESEND_API_KEY` — see [Deploying](#deploying-railway-two-services)):
@@ -128,7 +133,7 @@ public `/join` page — and a coach approves or rejects that request before any 
 - `/join` (public, two steps): first `GET /api/join/:code` resolves the code to a school **name**
   only, so a visitor confirms what they're requesting ("Request to join Lincoln High?") before
   typing anything personal; then `POST /api/join/:code` submits their proposed name, username,
-  email, password, and squad as a `SchoolJoinRequest` row with `status: PENDING`.
+  email, password, and gender as a `SchoolJoinRequest` row with `status: PENDING`.
 - **No `User` is created at request time** — same rule as everywhere else in this app: an account
   only exists once someone with authority has agreed to it. The chosen password sits hashed on the
   request row until a coach decides.
@@ -141,10 +146,10 @@ public `/join` page — and a coach approves or rejects that request before any 
   (`POST /api/schools/:id/requests/:reqId/reject`) just closes the request out; no account ever
   existed, nothing to undo. Approving re-checks the username/email for collisions at decision time,
   not just at submission — days could have passed.
-- The request's squad choice is the athlete's own guess, standing in for what a coach normally
-  picks when sending a bulk invite — corrected automatically once the athlete sets their real
-  gender at first login, same as any invited athlete's initial squad (`routes/me.ts`'s
-  `PATCH /gender`).
+- The gender the athlete answers at `/join` is set directly on their new `Athlete` row, and the
+  matching squad is derived from it via [`lib/gender.ts`](backend/src/lib/gender.ts)'s
+  `GENDER_TO_SQUAD` — same mapping the bulk-invite accept flow and the post-login gender gate
+  (`routes/me.ts`'s `PATCH /gender`) both use.
 
 ### Backdating a check-in or run
 
@@ -188,6 +193,23 @@ password-reset requests per 15 minutes. Automatically skipped when `NODE_ENV=tes
 default) so the test suite's many real logins aren't affected; active everywhere else, including
 local dev. Requires `app.set("trust proxy", 1)` (exactly one hop — Railway's own edge) for the
 limiter to read the real client IP correctly behind Railway's proxy.
+
+### Error handling
+
+Every uncaught error in an async route handler is forwarded to a single error-handling middleware
+(`app.ts`, registered last) via [`express-async-errors`](https://www.npmjs.com/package/express-async-errors),
+which returns a clean `500 { error: "..." }` instead of leaking the raw error. This isn't just
+tidiness: **Express 4 (what this app runs) does not do this automatically** — an uncaught error in
+a plain `async (req, res) => {...}` handler becomes an unhandled promise rejection, which crashes
+the entire Node process, taking the whole API down for every user until Railway restarts it, not
+just failing that one request. This actually happened in production once: an unguarded
+`sendEmail()` call inside the join-request approval route threw on a bad recipient address and
+took the API offline. `express-async-errors` (imported first, before any route file, in `app.ts`)
+closes that gap app-wide, and [`lib/email.ts`](backend/src/lib/email.ts)'s `trySendEmail` (used
+everywhere a real mutation already succeeded and the email is just a courtesy notification, as
+opposed to `sendEmail`'s own callers where sending *is* the deliverable, like forgot-password)
+additionally makes sure a flaky email provider can never affect the response at all, on top of the
+process-level safety net. See [`app.test.ts`](backend/src/app.test.ts) for the regression tests.
 
 ### Schools — shared roster visibility across a coaching staff
 
@@ -283,8 +305,11 @@ or a backup code.
   bytes, `openssl rand -hex 32`) to be set — unlike email, there's no simulate fallback; setup
   fails loudly rather than ever storing a secret insecurely.
 - **Backup codes** (`MfaBackupCode`) are generated with `crypto.randomBytes` (not `Math.random()`)
-  through an unbiased 32-character alphabet that excludes visually ambiguous characters
-  (`0`/`O`/`1`/`I`/`L`), and stored bcrypt-hashed. Each works once.
+  through a 31-character alphabet that excludes visually ambiguous characters (`0`/`O`/`1`/`I`/`L`)
+  — [`lib/randomCode.ts`](backend/src/lib/randomCode.ts)'s `randomUnambiguousString`, shared with
+  school join codes, uses rejection sampling rather than a plain `byte % 31` so every character is
+  genuinely equally likely (31 doesn't evenly divide 256, so a naive modulo would be slightly
+  biased) — and stored bcrypt-hashed. Each works once.
 - **Login** becomes two calls when `totpEnabled`: `POST /api/auth/login` returns
   `{ mfaRequired: true, tempToken }` (a real session isn't issued yet) instead of a token, and
   `POST /api/auth/mfa/verify` (public, rate-limited, accepts a TOTP code or a backup code) issues
@@ -352,11 +377,14 @@ an incidental side effect of which button someone happened to click.
   [Schools](#schools--shared-roster-visibility-across-a-coaching-staff)); a `User` with
   `role: COACH` may optionally belong to one, via `User.schoolId`. Also holds a short, unique
   `joinCode` athletes use to self-request joining (see below)
-- **Invite** — an email + status + type (`ATHLETE` or `COACH_TO_SCHOOL`) + a target (squad or
-  school) + a unique accept token/expiry; accepting one for real (`/accept-invite/:token`) creates
-  the account (and, for `ATHLETE`, the `Athlete`/`CoachAthlete` rows too)
+- **Invite** — an email + status + type (`ATHLETE` or `COACH_TO_SCHOOL`) + an optional school (for
+  `COACH_TO_SCHOOL`) + a unique accept token/expiry; accepting one for real
+  (`/accept-invite/:token`) creates the account (and, for `ATHLETE`, the `Athlete`/`CoachAthlete`
+  rows too, with squad derived from the gender the athlete answers on that same form). `squadId`
+  still exists on the model but is no longer set or read for `ATHLETE` invites — squad comes from
+  the athlete's own gender answer now, not a coach's choice at invite time
 - **SchoolJoinRequest** — the reverse of an `Invite`: an athlete's proposed name/username/email/
-  password (hashed) + squad + status (`PENDING`/`APPROVED`/`REJECTED`), submitted via a school's
+  password (hashed) + gender + status (`PENDING`/`APPROVED`/`REJECTED`), submitted via a school's
   `joinCode` at the public `/join` page. No `User` exists until a coach at that school approves it
   (see [School join code](#school-join-code--athlete-self-service-coach-approved) above)
 - **PasswordResetToken** — simulated forgot-password flow
@@ -674,7 +702,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/training-load/athlete/:athleteId` | Run history |
 | DELETE | `/api/training-load/:id` | Delete your own logged run (athlete only) |
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |
-| POST | `/api/invites/bulk` | Bulk-create invites for a squad from a list of emails (coach only) |
+| POST | `/api/invites/bulk` | Bulk-create invites from a list of emails, no squad needed (coach only) |
 | DELETE | `/api/invites/:id` | Remove a still-pending invite, or clear an already-accepted one off the list (coach only, must be their own; 400 for a rejected invite) |
 
 ## Deploying

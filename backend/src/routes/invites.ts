@@ -3,20 +3,24 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { emailEnabled, sendEmail } from "../lib/email.js";
+import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { env } from "../lib/env.js";
 
 export const invitesRouter = Router();
 
 const INVITE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
-const SQUAD_LABEL: Record<string, string> = { GIRLS: "the girls squad", BOYS: "the boys squad" };
-
 invitesRouter.use(requireAuth, requireRole("COACH"));
 
+// ATHLETE invites only -- this backs the Invite tab, which is athlete
+// roster invites specifically. A coach's own COACH_TO_SCHOOL invites
+// (sent from the School tab's "Invite a coach") are a different kind of
+// invite entirely and are already listed on the School tab via
+// getSchoolDetail's own `invites` field -- they shouldn't also show up
+// here just because the same coach sent both.
 invitesRouter.get("/", async (req, res) => {
   const invites = await prisma.invite.findMany({
-    where: { invitedById: req.user!.sub },
+    where: { invitedById: req.user!.sub, type: "ATHLETE" },
     orderBy: { createdAt: "desc" },
   });
   res.json(invites);
@@ -24,19 +28,21 @@ invitesRouter.get("/", async (req, res) => {
 
 const bulkSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(100),
-  squadId: z.string().min(1),
 });
 
+// No squad choice at invite time anymore -- an invited athlete now
+// answers their own gender on the accept-invite form (same question,
+// same options, as the post-login gender gate) and gets sorted into the
+// matching squad from that, exactly like the school-join-code flow
+// above. A coach picking Girls/Boys before even knowing who's going to
+// click the link was always really a guess on the athlete's behalf;
+// letting the athlete answer for themself removes that guess entirely.
 invitesRouter.post("/bulk", async (req, res) => {
   const parsed = bulkSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
   const coachId = req.user!.sub;
-  const { squadId } = parsed.data;
-  const squad = await prisma.squad.findUnique({ where: { id: squadId } });
-  if (!squad) return res.status(400).json({ error: "Unknown squad" });
-
   const coach = await prisma.user.findUniqueOrThrow({ where: { id: coachId } });
   const emails = [...new Set(parsed.data.emails.map((e) => e.trim().toLowerCase()))];
 
@@ -55,19 +61,22 @@ invitesRouter.post("/bulk", async (req, res) => {
   const created = await Promise.all(
     toCreate.map((email) =>
       prisma.invite.create({
-        data: { email, invitedById: coachId, squadId, token: crypto.randomBytes(24).toString("hex"), expiresAt },
+        data: { email, invitedById: coachId, token: crypto.randomBytes(24).toString("hex"), expiresAt },
       })
     )
   );
 
+  // Every invite in `created` already exists in the DB -- a bad address
+  // among the batch (or a Resend hiccup) shouldn't fail the whole
+  // response; trySendEmail can't throw.
   if (emailEnabled) {
     await Promise.all(
       created.map((invite) => {
         const acceptUrl = `${env.frontendUrl}/accept-invite/${invite.token}`;
-        return sendEmail({
+        return trySendEmail({
           to: invite.email,
           subject: `${coach.firstName} ${coach.lastName} invited you to Relay`,
-          html: `<p>${coach.firstName} ${coach.lastName} invited you to join ${SQUAD_LABEL[squad.name] ?? "their squad"} on Relay.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p><p>This link expires in 14 days.</p>`,
+          html: `<p>${coach.firstName} ${coach.lastName} invited you to join the team on Relay.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p><p>This link expires in 14 days.</p>`,
         });
       })
     );

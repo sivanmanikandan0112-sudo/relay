@@ -5,9 +5,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { getSchoolDetail } from "../lib/schoolDetail.js";
-import { emailEnabled, sendEmail } from "../lib/email.js";
+import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { env } from "../lib/env.js";
 import { assignNewJoinCode } from "../lib/joinCode.js";
+import { GENDER_TO_SQUAD } from "../lib/gender.js";
 
 export const schoolsRouter = Router();
 
@@ -166,15 +167,16 @@ schoolsRouter.post("/:id/invite-coach", async (req, res) => {
     },
   });
 
+  // The invite already exists in the DB regardless of what happens next
+  // -- trySendEmail can't fail this response (see its own comment).
   let emailSent = false;
   if (emailEnabled) {
     const acceptUrl = `${env.frontendUrl}/accept-invite/${invite.token}`;
-    await sendEmail({
+    emailSent = await trySendEmail({
       to: invite.email,
       subject: `${coach.firstName} ${coach.lastName} invited you to join ${school.name} on Relay`,
       html: `<p>${coach.firstName} ${coach.lastName} invited you to join <strong>${school.name}</strong> on Relay as a coach.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p><p>This link expires in 14 days.</p>`,
     });
-    emailSent = true;
   }
 
   res.status(201).json({ invite, emailSent });
@@ -199,7 +201,6 @@ schoolsRouter.get("/:id/requests", async (req, res) => {
   if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
   const requests = await prisma.schoolJoinRequest.findMany({
     where: { schoolId: req.params.id, status: "PENDING" },
-    include: { squad: true },
     orderBy: { createdAt: "asc" },
   });
   res.json(
@@ -209,7 +210,7 @@ schoolsRouter.get("/:id/requests", async (req, res) => {
       lastName: r.lastName,
       username: r.username,
       email: r.email,
-      squadName: r.squad.name,
+      gender: r.gender,
       createdAt: r.createdAt,
     })),
   );
@@ -240,8 +241,14 @@ schoolsRouter.post("/:id/requests/:reqId/approve", async (req, res) => {
     });
   }
 
+  // Same fallback as an unmapped gender ever gets anywhere in this app
+  // (see lib/gender.ts) -- GIRLS is an arbitrary but harmless starting
+  // squad for NONBINARY/PREFER_NOT_TO_SAY, since there's no invite squad
+  // to fall back to the way routes/me.ts's own PATCH /gender has.
+  const squadName = GENDER_TO_SQUAD[request.gender] ?? "GIRLS";
   const coachId = req.user!.sub;
   const { user, athlete } = await prisma.$transaction(async (tx) => {
+    const squad = await tx.squad.upsert({ where: { name: squadName }, update: {}, create: { name: squadName } });
     const user = await tx.user.create({
       data: {
         username: request.username,
@@ -252,8 +259,12 @@ schoolsRouter.post("/:id/requests/:reqId/approve", async (req, res) => {
         role: "ATHLETE",
       },
     });
+    // gender is set directly from the request's own answer -- an
+    // athlete who came in this way already told /join their gender, so
+    // they never hit the post-login gender gate the way an invited
+    // athlete does.
     const athlete = await tx.athlete.create({
-      data: { name: `${request.firstName} ${request.lastName}`, squadId: request.squadId, userId: user.id },
+      data: { name: `${request.firstName} ${request.lastName}`, gender: request.gender, squadId: squad.id, userId: user.id },
     });
     await tx.coachAthlete.create({ data: { coachId, athleteId: athlete.id } });
     await tx.schoolJoinRequest.update({
@@ -263,8 +274,12 @@ schoolsRouter.post("/:id/requests/:reqId/approve", async (req, res) => {
     return { user, athlete };
   });
 
+  // The account already exists at this point regardless of what happens
+  // next -- this is exactly the call site that crashed production once
+  // (a bad recipient rejected by Resend, unguarded). trySendEmail can't
+  // fail this response.
   if (emailEnabled) {
-    await sendEmail({
+    await trySendEmail({
       to: user.email,
       subject: "You're in! Your Relay account is ready",
       html: `<p>Hey ${user.firstName}, your coach approved your request to join Relay. Sign in any time with the username <strong>${user.username}</strong> and the password you chose.</p><p><a href="${env.frontendUrl}/login">${env.frontendUrl}/login</a></p>`,

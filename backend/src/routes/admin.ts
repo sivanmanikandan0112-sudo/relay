@@ -5,7 +5,7 @@ import { requireAuth, requireSuperAdmin } from "../middleware/requireAuth.js";
 import { getCoachAthleteIds, getSchoolAthleteIds } from "../lib/authz.js";
 import { getSchoolDetail } from "../lib/schoolDetail.js";
 import { issueResetToken } from "../lib/passwordReset.js";
-import { emailEnabled, sendEmail } from "../lib/email.js";
+import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { dayKey, groupByDay } from "../lib/date.js";
 
 // System-wide, read-only view across every school/coach/athlete --
@@ -207,8 +207,10 @@ adminRouter.post("/users/:id/reset-mfa", async (req, res) => {
     prisma.user.update({ where: { id: user.id }, data: { totpEnabled: false, totpSecretEncrypted: null } }),
   ]);
 
+  // MFA is already cleared at this point regardless of what happens
+  // next -- trySendEmail can't fail this response.
   if (emailEnabled) {
-    await sendEmail({
+    await trySendEmail({
       to: user.email,
       subject: "Your two-factor authentication has been reset",
       html: `<p>Hi ${user.firstName},</p><p>An administrator has reset two-factor authentication on your Relay account. You can re-enable it any time from My Profile.</p><p>If this was unexpected, contact your administrator immediately.</p>`,

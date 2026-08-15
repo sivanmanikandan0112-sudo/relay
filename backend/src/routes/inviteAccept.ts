@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { signToken } from "../lib/auth.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { GENDER_TO_SQUAD } from "../lib/gender.js";
 
 // Public, unauthenticated -- this is the real half of the invite flow.
 // routes/invites.ts and routes/schools.ts (both coach-authenticated)
@@ -17,7 +18,7 @@ export const inviteAcceptRouter = Router();
 async function findValidInvite(token: string) {
   const invite = await prisma.invite.findUnique({
     where: { token },
-    include: { squad: true, school: true, invitedBy: true },
+    include: { school: true, invitedBy: true },
   });
   if (!invite || invite.status !== "PENDING" || invite.expiresAt < new Date()) return null;
   return invite;
@@ -38,7 +39,6 @@ inviteAcceptRouter.get("/:token", async (req, res) => {
   res.json({
     email: invite.email,
     type: invite.type,
-    squadName: invite.squad?.name ?? null,
     schoolName: invite.school?.name ?? null,
     coachName: `${invite.invitedBy.firstName} ${invite.invitedBy.lastName}`,
     targetAccountExists,
@@ -55,24 +55,27 @@ const acceptSchema = z.object({
   password: z.string().min(8),
   firstName: z.string().trim().min(1).max(60),
   lastName: z.string().trim().min(1).max(60),
+  // Required for an ATHLETE invite (validated below, once we know
+  // invite.type), unused for COACH_TO_SCHOOL -- same question, same
+  // options, as the post-login gender gate. Determines the athlete's
+  // squad directly (see GENDER_TO_SQUAD below) instead of a coach
+  // guessing at Girls/Boys when they sent the invite.
+  gender: z.enum(["FEMALE", "MALE", "NONBINARY", "PREFER_NOT_TO_SAY"]).optional(),
 });
 
 // Creates the real account: for an ATHLETE invite, a User (role
-// ATHLETE), an Athlete profile in the invite's squad, and the
-// CoachAthlete row linking them to whoever sent the invite; for a
-// COACH_TO_SCHOOL invite, a User (role COACH) with schoolId set directly
-// -- no Athlete/CoachAthlete rows, since a coach's roster visibility
-// comes from a live join through schoolId (see lib/authz.ts), not
-// anything created here. Either way, logs them straight in, same
-// response shape as POST /api/auth/login. Only for an email with no
-// existing account yet -- see POST /:token/attach for the case where one
-// already exists.
+// ATHLETE), an Athlete profile in the squad matching the gender they
+// just answered, and the CoachAthlete row linking them to whoever sent
+// the invite; for a COACH_TO_SCHOOL invite, a User (role COACH) with
+// schoolId set directly -- no Athlete/CoachAthlete rows, since a coach's
+// roster visibility comes from a live join through schoolId (see
+// lib/authz.ts), not anything created here. Either way, logs them
+// straight in, same response shape as POST /api/auth/login. Only for an
+// email with no existing account yet -- see POST /:token/attach for the
+// case where one already exists.
 inviteAcceptRouter.post("/:token", async (req, res) => {
   const invite = await findValidInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: "This invite link is invalid, expired, or already used." });
-  if (invite.type === "ATHLETE" && !invite.squadId) {
-    return res.status(400).json({ error: "This invite has no squad assigned — ask your coach to re-send it." });
-  }
   if (invite.type === "COACH_TO_SCHOOL" && !invite.schoolId) {
     return res.status(400).json({ error: "This invite has no school assigned — ask for a new one." });
   }
@@ -80,6 +83,9 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
   const parsed = acceptSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  if (invite.type === "ATHLETE" && !parsed.data.gender) {
+    return res.status(400).json({ error: "Pick a gender to continue" });
   }
   const { username, password, firstName, lastName } = parsed.data;
 
@@ -126,12 +132,22 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
     });
   }
 
+  // Same fallback as every other unmapped-gender case in this app (see
+  // lib/gender.ts) -- GIRLS is an arbitrary but harmless starting squad
+  // for NONBINARY/PREFER_NOT_TO_SAY.
+  const gender = parsed.data.gender!;
+  const squadName = GENDER_TO_SQUAD[gender] ?? "GIRLS";
+
   const { user, athlete } = await prisma.$transaction(async (tx) => {
+    const squad = await tx.squad.upsert({ where: { name: squadName }, update: {}, create: { name: squadName } });
     const user = await tx.user.create({
       data: { username, email: invite.email, passwordHash, firstName, lastName, role: "ATHLETE" },
     });
+    // gender is set directly from the athlete's own answer here -- they
+    // never hit the post-login gender gate the way an athlete invited
+    // before this change would have.
     const athlete = await tx.athlete.create({
-      data: { name: `${firstName} ${lastName}`, squadId: invite.squadId!, userId: user.id },
+      data: { name: `${firstName} ${lastName}`, gender, squadId: squad.id, userId: user.id },
     });
     await tx.coachAthlete.create({ data: { coachId: invite.invitedById, athleteId: athlete.id } });
     await tx.invite.update({ where: { id: invite.id }, data: { status: "ACCEPTED", respondedAt: new Date() } });
@@ -150,7 +166,7 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
       name: `${user.firstName} ${user.lastName}`,
       role: user.role,
       athleteId: athlete.id,
-      gender: null,
+      gender: athlete.gender,
       hasCoach: true,
       readinessShared: false,
       schoolId: null,

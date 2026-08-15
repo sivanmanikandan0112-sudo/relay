@@ -37,10 +37,39 @@ export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<
   }
   const { error } = await resend.emails.send({ from: env.emailFrom, to, subject, html });
   if (error) {
-    // Surfaced to the caller as a normal thrown error, same as any other
-    // failed dependency call -- routes don't currently catch this
-    // specially, so it'll produce a 500, which is the right behavior for
-    // "we told the user we'd email them and then didn't."
+    // Surfaced to the caller as a normal thrown error -- the right
+    // behavior for a route where sending *is* the deliverable (e.g.
+    // forgot-password: if the email can't go out, the request itself
+    // failed, there's no side effect worth preserving). Routes where a
+    // real mutation already succeeded and the email is just a courtesy
+    // notification should use trySendEmail below instead, not this
+    // directly -- see its own comment for why.
     throw new Error(`Resend send failed: ${error.message}`);
+  }
+}
+
+/**
+ * Same as sendEmail, but never throws -- for the common case where a
+ * real mutation (an invite created, an account approved, MFA reset)
+ * already succeeded before the notification, and a Resend hiccup
+ * shouldn't turn that success into a 500 for the caller. Logs the
+ * failure server-side and returns whether it actually sent, so the
+ * route can still report an accurate emailSent flag if it wants one.
+ *
+ * This is also the specific fix for a real production incident: an
+ * unguarded `await sendEmail(...)` after a successful account-approval
+ * transaction in routes/schools.ts threw on a bad recipient address and
+ * crashed the entire process (Express 4 doesn't auto-catch async
+ * rejections -- see app.ts's express-async-errors comment for the other
+ * half of this fix). Every "notify after the real work is already done"
+ * call site should go through this, not raw sendEmail.
+ */
+export async function trySendEmail(input: SendEmailInput): Promise<boolean> {
+  try {
+    await sendEmail(input);
+    return true;
+  } catch (err) {
+    console.error("[email] send failed, continuing anyway:", err);
+    return false;
   }
 }

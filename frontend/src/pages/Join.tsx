@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, type Gender } from "../lib/api";
+
+// Same options/order as GenderGate.tsx -- an athlete who comes in
+// through /join answers this once, here, instead of hitting the
+// post-login gender gate a second time (approving the request sets
+// Athlete.gender straight from this answer -- see routes/schools.ts).
+const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
+  { value: "FEMALE", label: "Female" },
+  { value: "MALE", label: "Male" },
+  { value: "NONBINARY", label: "Non-binary" },
+  { value: "PREFER_NOT_TO_SAY", label: "Prefer not to say" },
+];
 
 // Public, unauthenticated -- the athlete-initiated side of the school
 // join-code flow (see routes/schoolJoin.ts). Two steps, deliberately not
@@ -23,7 +34,7 @@ export function Join() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [squad, setSquad] = useState<"GIRLS" | "BOYS">("GIRLS");
+  const [gender, setGender] = useState<Gender | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -45,6 +56,10 @@ export function Join() {
   async function handleSubmitRequest(e: FormEvent) {
     e.preventDefault();
     setSubmitError(null);
+    if (!gender) {
+      setSubmitError("Pick one to continue");
+      return;
+    }
     if (password !== confirm) {
       setSubmitError("Passwords don't match");
       return;
@@ -61,7 +76,7 @@ export function Join() {
         username: username.trim(),
         email: email.trim(),
         password,
-        squad,
+        gender,
       });
       setSent(true);
     } catch (err) {
@@ -134,13 +149,22 @@ export function Join() {
           Last name
           <input value={lastName} onChange={(e) => setLastName(e.target.value)} type="text" required />
         </label>
-        <label>
-          Squad
-          <select value={squad} onChange={(e) => setSquad(e.target.value as "GIRLS" | "BOYS")}>
-            <option value="GIRLS">Girls</option>
-            <option value="BOYS">Boys</option>
-          </select>
-        </label>
+        <div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 6 }}>Gender</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {GENDER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`pill-btn ${gender === opt.value ? "selected" : ""}`}
+                style={{ width: "100%", height: 38, textAlign: "left", padding: "0 12px" }}
+                onClick={() => setGender(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} type="text" autoComplete="username" required />

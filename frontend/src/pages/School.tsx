@@ -1,6 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type SchoolDetail, type SchoolJoinRequestSummary } from "../lib/api";
+import { api, type Gender, type SchoolDetail, type SchoolJoinRequestSummary } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+
+// Same labels as GenderGate.tsx's own options.
+const GENDER_LABEL: Record<Gender, string> = {
+  FEMALE: "Female",
+  MALE: "Male",
+  NONBINARY: "Non-binary",
+  PREFER_NOT_TO_SAY: "Prefer not to say",
+};
 
 export function School() {
   const { user, updateUser } = useAuth();
@@ -333,7 +341,7 @@ export function School() {
               <div key={r.id} className="run-item" style={{ padding: "12px 16px" }}>
                 <div className="run-row">
                   <span className="run-type">
-                    {r.firstName} {r.lastName} <span className="run-meta">({r.squadName === "GIRLS" ? "Girls" : "Boys"})</span>
+                    {r.firstName} {r.lastName} <span className="run-meta">({GENDER_LABEL[r.gender]})</span>
                   </span>
                 </div>
                 <div className="run-row" style={{ marginTop: 4 }}>

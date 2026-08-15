@@ -32,7 +32,7 @@ const requestSchema = z.object({
     .regex(/^[a-z0-9._-]+$/i, "Letters, numbers, dots, dashes, and underscores only"),
   email: z.string().trim().email(),
   password: z.string().min(8),
-  squad: z.enum(["GIRLS", "BOYS"]),
+  gender: z.enum(["FEMALE", "MALE", "NONBINARY", "PREFER_NOT_TO_SAY"]),
 });
 
 // Creates a SchoolJoinRequest, never a User -- no account exists until a
@@ -49,7 +49,7 @@ schoolJoinRouter.post("/:code", joinRequestLimiter, async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { firstName, lastName, username, email, password, squad } = parsed.data;
+  const { firstName, lastName, username, email, password, gender } = parsed.data;
   const normalizedEmail = email.toLowerCase();
 
   const [userTaken, pendingUsername, pendingEmail] = await Promise.all([
@@ -67,11 +67,10 @@ schoolJoinRouter.post("/:code", joinRequestLimiter, async (req, res) => {
     return res.status(409).json({ error: "You already have a pending request for this school." });
   }
 
-  const squadRow = await prisma.squad.findUniqueOrThrow({ where: { name: squad } });
   const passwordHash = await bcrypt.hash(password, 10);
 
   await prisma.schoolJoinRequest.create({
-    data: { schoolId: school.id, firstName, lastName, username, email: normalizedEmail, passwordHash, squadId: squadRow.id },
+    data: { schoolId: school.id, firstName, lastName, username, email: normalizedEmail, passwordHash, gender },
   });
 
   res.status(201).json({ schoolName: school.name });
