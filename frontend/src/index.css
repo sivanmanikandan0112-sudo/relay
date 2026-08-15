@@ -383,6 +383,28 @@ input.ath-input, select.ath-input {
   color: var(--bg); background: var(--orange); border: none; padding: 9px 18px; border-radius: 9px; cursor: pointer;
 }
 
+/* ---------- Home / landing ---------- */
+.home-hero { text-align: center; padding: 8px 0 40px; }
+.home-hero .eyebrow-mono { display: block; }
+.home-audience-lede { text-align: center; color: var(--text-dim); font-size: 13.5px; max-width: 56ch; margin: 6px auto 22px; line-height: 1.5; }
+.audience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 40px; }
+.audience-card { background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--border-2); border-radius: 14px; padding: 22px 22px 24px; display: flex; flex-direction: column; }
+.audience-card.for-coaches { border-top-color: var(--orange); }
+.audience-card.for-athletes { border-top-color: var(--teal); }
+.audience-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; }
+.audience-card.for-coaches .audience-eyebrow { color: var(--orange); }
+.audience-card.for-athletes .audience-eyebrow { color: var(--teal); }
+.audience-title { font-family: var(--font-display); font-weight: 600; font-size: 20px; letter-spacing: .2px; margin: 0 0 8px; }
+.audience-lede { font-size: 13.5px; color: var(--text-dim-2); line-height: 1.55; margin: 0 0 16px; }
+.audience-points { display: flex; flex-direction: column; gap: 9px; flex: 1; }
+.audience-point { display: flex; gap: 10px; align-items: flex-start; }
+.audience-point .mark { flex: none; font-family: var(--font-display); font-weight: 700; font-size: 13px; line-height: 1.4; }
+.audience-card.for-coaches .audience-point .mark { color: var(--orange); }
+.audience-card.for-athletes .audience-point .mark { color: var(--teal); }
+.audience-point .txt { font-size: 13.5px; color: var(--text-light); line-height: 1.5; }
+.audience-cta { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.audience-cta .fine { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); line-height: 1.6; }
+
 /* ---------- Login ---------- */
 .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 90% at 50% -10%, #141d2e 0%, #0a0e16 60%); }
 .login-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 32px; width: 320px; display: flex; flex-direction: column; gap: 14px; }
