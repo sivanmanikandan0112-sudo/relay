@@ -17,11 +17,15 @@ import { WorkloadAnalysis } from "./WorkloadAnalysis";
 interface DetailDrawerProps {
   athleteId: string;
   onClose: () => void;
+  // Called after a successful "Remove from roster" -- lets the parent
+  // page (Brief/Dashboard) refetch its own athlete list so the removed
+  // athlete actually disappears from it, not just from this drawer.
+  onRemoved?: () => void;
 }
 
 const SQUAD_LABEL: Record<string, string> = { GIRLS: "Girls squad", BOYS: "Boys squad" };
 
-export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
+export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProps) {
   const [athlete, setAthlete] = useState<AthleteDetail | null>(null);
   const [history, setHistory] = useState<ReadinessScoreRecord[]>([]);
   const [wellness, setWellness] = useState<WellnessEntry[]>([]);
@@ -29,6 +33,11 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [athleteStats, setAthleteStats] = useState<AthleteStatsResponse | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+
+  // --- Remove from roster ------------------------------------------
+  const [removeConfirming, setRemoveConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   function refresh() {
     api.athleteDetail(athleteId).then(setAthlete);
@@ -40,6 +49,19 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
   }
 
   useEffect(refresh, [athleteId]);
+
+  async function handleRemove() {
+    setRemoveError(null);
+    setRemoving(true);
+    try {
+      await api.removeFromRoster(athleteId);
+      onRemoved?.();
+      onClose();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Couldn't remove them from your roster");
+      setRemoving(false);
+    }
+  }
 
   if (!athlete) return null;
 
@@ -214,6 +236,37 @@ export function DetailDrawer({ athleteId, onClose }: DetailDrawerProps) {
             </div>
           ) : (
             <div className="drawer-legend">No notes yet — leave one to close the loop.</div>
+          )}
+
+          <div className="drawer-section-label" style={{ marginTop: 20 }}>
+            <span>ROSTER</span>
+          </div>
+          {!removeConfirming ? (
+            <button className="btn-secondary" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={() => setRemoveConfirming(true)}>
+              Remove from roster
+            </button>
+          ) : (
+            <div className="drawer-plain" style={{ borderLeft: "3px solid var(--red)" }}>
+              <p style={{ margin: 0, fontSize: 13 }}>
+                Remove {athlete.name} from your team's active roster? Their check-in history, runs, and readiness
+                scores are all kept exactly as they are — this only takes them off the roster, same as an athlete
+                who hasn't been added yet. Re-invite or approve them again later and everything picks right back
+                up.
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button className="btn-primary" style={{ background: "var(--red)" }} disabled={removing} onClick={handleRemove}>
+                  {removing ? "Removing…" : "Yes, remove them"}
+                </button>
+                <button className="btn-secondary" disabled={removing} onClick={() => setRemoveConfirming(false)}>
+                  Cancel
+                </button>
+              </div>
+              {removeError && (
+                <p className="error" style={{ marginTop: 8 }}>
+                  {removeError}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

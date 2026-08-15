@@ -596,6 +596,31 @@ The drawer also has two always-different sections, both backed by
     everywhere else in the app (deliberately one risk scale across the whole app, not a second,
     differently-thresholded one that could disagree with the status pill next to it).
 
+### Removing an athlete from the roster
+
+A **Remove from roster** button at the bottom of the same detail drawer (behind an inline confirm
+step) lets a coach take an athlete off the active roster — for someone who's graduated, quit, or
+transferred elsewhere. Deliberately **not** an account deletion: the athlete's `User`/`Athlete`
+rows and every check-in, run, readiness score, injury, and note stay exactly as they are —
+`DELETE /api/athletes/:id/roster` only removes the `CoachAthlete` link(s). The athlete falls back
+to the same "waiting on a coach" state a brand-new, never-rostered athlete already sees; re-inviting
+or re-approving them later picks their full history right back up, nothing was ever lost.
+
+Any coach who can currently see the athlete may do this — the same `isCoachOfAthlete` check every
+other coach-facing athlete route already uses (see
+[Schools](#schools--shared-roster-visibility-across-a-coaching-staff)), not narrowed to "only the
+coach who originally added them." It deletes **every** `CoachAthlete` row for that athlete, not
+just the calling coach's own — necessary because of how shared-school visibility actually works
+(`getSchoolAthleteIds` in [`lib/authz.ts`](backend/src/lib/authz.ts)): any coach at the athlete's
+school sees them the moment *any* coach there has a roster row for them, regardless of whose row
+it is, so leaving even one other coach's row in place would mean the athlete never actually
+disappears from the shared roster this action is meant to clean up.
+
+This was a deliberate, narrower alternative to a real account-deletion feature — see this
+project's own commit history for the reasoning: permanently destroying a real athlete's check-in
+and run history over a roster-cleanup request is a much bigger, harder-to-undo action than the
+actual problem ("this person isn't running with us anymore") calls for.
+
 ## Getting started
 
 ### Prerequisites
@@ -777,6 +802,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |
 | GET | `/api/athletes/:id/readiness-history` | Readiness score history |
 | GET | `/api/athletes/:id/stats` | Always-visible session stats + phase-gated workload/ACWR numbers |
+| DELETE | `/api/athletes/:id/roster` | Remove an athlete from the active roster (coach only) — history/account untouched, see [above](#removing-an-athlete-from-the-roster) |
 | GET | `/api/brief?week=&year=&squadId=` | Weekly brief, ranked worst-first, roster-scoped |
 | GET | `/api/notes/athlete/:athleteId` | Notes for an athlete |
 | POST | `/api/notes` | Leave a note (coach, must be on the athlete's roster) |

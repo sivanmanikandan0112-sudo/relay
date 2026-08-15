@@ -39,14 +39,20 @@ export function Dashboard() {
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{ id: string; name: string } | null>(null);
 
-  useEffect(() => {
+  function refresh() {
     if (!squadId) return;
     const now = new Date();
     api.brief(currentIsoWeek(now), now.getFullYear(), squadId).then(setScores).catch(() => {});
+  }
+
+  useEffect(() => {
+    refresh();
+    if (!squadId) return;
     api.squads().then((squads) => {
       const squad = squads.find((s) => s.id === squadId);
       if (squad) setSquadName(SQUAD_LABEL[squad.name]);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [squadId]);
 
   return (
@@ -140,7 +146,7 @@ export function Dashboard() {
         })}
       </div>
 
-      {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} />}
+      {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} onRemoved={refresh} />}
       {noteFor && (
         <NoteModal
           athleteId={noteFor.id}

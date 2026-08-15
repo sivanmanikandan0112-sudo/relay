@@ -87,6 +87,7 @@ export const api = {
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
   athleteDetail: (athleteId: string) => request<AthleteDetail>(`/athletes/${athleteId}`),
+  removeFromRoster: (athleteId: string) => request<{ removed: boolean }>(`/athletes/${athleteId}/roster`, { method: "DELETE" }),
   wellnessForAthlete: (athleteId: string) => request<WellnessEntry[]>(`/wellness/athlete/${athleteId}`),
   brief: (week: number, year: number, squadId?: string) =>
     request<ReadinessScore[]>(

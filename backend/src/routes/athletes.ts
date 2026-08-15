@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth } from "../middleware/requireAuth.js";
-import { canAccessAthlete } from "../lib/authz.js";
+import { requireAuth, requireRole } from "../middleware/requireAuth.js";
+import { canAccessAthlete, isCoachOfAthlete } from "../lib/authz.js";
 import { computeReadinessBreakdown } from "../lib/scoring.js";
 import { getDataPhase, mean } from "../lib/math.js";
 import { groupByDay } from "../lib/date.js";
@@ -23,6 +23,39 @@ athletesRouter.get("/:id", async (req, res) => {
   });
   if (!athlete) return res.status(404).json({ error: "Athlete not found" });
   res.json(athlete);
+});
+
+// Removes an athlete from the active roster -- for someone who's stopped
+// running with the team (graduated, quit, transferred). Deliberately
+// NOT an account deletion: the User/Athlete rows and every check-in, run,
+// readiness score, injury, and note stay exactly as they are, untouched
+// -- only the roster link goes away. Re-inviting or re-approving them
+// later (a new CoachAthlete row) picks their full history back up
+// immediately, nothing was ever lost.
+//
+// Deletes EVERY CoachAthlete row for this athlete, not just the calling
+// coach's own -- necessary because of how shared-school visibility
+// actually works (see lib/authz.ts's getSchoolAthleteIds): any coach at
+// the athlete's school sees them the moment *any* coach there has a
+// CoachAthlete row for them, regardless of whose row it is. Leaving even
+// one other coach's row in place would mean the athlete never actually
+// disappears from the shared roster this action is meant to clean up.
+//
+// Any coach who can currently see this athlete may do this -- the same
+// isCoachOfAthlete check every other coach-facing athlete route already
+// uses, not narrowed to "only the coach who originally added them" (that
+// concept doesn't really exist here: CoachAthlete is many-to-many, and
+// invites can come from any coach at a school).
+athletesRouter.delete("/:id/roster", requireRole("COACH"), async (req, res) => {
+  const athleteId = req.params.id;
+  if (!(await isCoachOfAthlete(req.user!.sub, athleteId))) {
+    return res.status(403).json({ error: "Not your athlete" });
+  }
+  const athlete = await prisma.athlete.findUnique({ where: { id: athleteId }, select: { id: true } });
+  if (!athlete) return res.status(404).json({ error: "Athlete not found" });
+
+  await prisma.coachAthlete.deleteMany({ where: { athleteId } });
+  res.json({ removed: true });
 });
 
 athletesRouter.get("/:id/readiness-history", async (req, res) => {

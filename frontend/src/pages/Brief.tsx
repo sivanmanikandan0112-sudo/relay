@@ -160,7 +160,7 @@ export function Brief() {
 
       {scores.length > 0 && <MatchingSection scores={scores} />}
 
-      {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} />}
+      {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} onRemoved={refresh} />}
       {noteFor && (
         <NoteModal
           athleteId={noteFor.id}
