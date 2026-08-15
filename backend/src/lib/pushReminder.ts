@@ -51,7 +51,7 @@ export async function sendCheckinReminders(now: Date = new Date()): Promise<Remi
     for (const sub of athlete.user?.pushSubscriptions ?? []) {
       const result = await trySendPush(sub, {
         title: "Check-in reminder",
-        body: "You haven't logged today's check-in yet -- takes less than a minute.",
+        body: "You haven't logged today's check-in yet -- takes less than a minute. Ran today? Log that too.",
         url: "/checkin",
       });
       if (result === "sent") sent++;
