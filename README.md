@@ -395,16 +395,19 @@ runs exactly as it did before this feature until that's done (see
   subscribing itself isn't role-specific) save/remove one device's row, scoped to the caller's own
   account.
 - **The daily reminder** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
-  `sendCheckinReminders`, scheduled once a day at 18:00 UTC by a `node-cron` job in
-  [`src/index.ts`](backend/src/index.ts) (not `app.ts`, which every test file imports via
-  supertest and deliberately has no side effects of its own — see its own top-of-file comment).
+  `sendCheckinReminders`, scheduled once a day at **4:00 PM America/Chicago (Central time)** by a
+  `node-cron` job in [`src/index.ts`](backend/src/index.ts) — `node-cron`'s `timezone` option, not a
+  hand-computed UTC hour, so it stays pinned to 4pm Central wall-clock time across daylight saving
+  changes. Scheduled in `index.ts`, not `app.ts`, which every test file imports via
+  supertest and deliberately has no side effects of its own — see its own top-of-file comment.
   Finds every athlete with at least one subscription and no check-in yet today, sends each of their
   devices a reminder, and deletes any subscription the push service reports as `"gone"`. Coaches are
   never included -- the query only ever joins through `Athlete`, so a coach's own subscription (the
   Profile toggle is athlete-only, but the endpoint itself doesn't enforce that) simply never
   matches, no special-casing needed. No per-athlete timezone is tracked anywhere in this app, so
-  this is one fixed UTC hour for everyone -- the same simplification `dayKey`/`resolveSubmissionDay`
-  already make (see [Backdating](#backdating-a-check-in-or-run) above).
+  this is one fixed clock time for everyone regardless of where their team actually is -- the same
+  simplification `dayKey`/`resolveSubmissionDay` already make (see
+  [Backdating](#backdating-a-check-in-or-run) above).
 - **Service worker** — the actual reason `injectManifest` (not the simpler `generateSW`) was picked
   for the whole [PWA setup](#progressive-web-app) in the first place: `push` and `notificationclick`
   handlers in [`src/sw.ts`](frontend/src/sw.ts) show the OS notification and deep-link to `/checkin`
