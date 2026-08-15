@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="12%" r="85%">
+      <stop offset="0%" stop-color="#141d2e" />
+      <stop offset="60%" stop-color="#0a0e16" />
+    </radialGradient>
+    <linearGradient id="signal" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d9703f" />
+      <stop offset="55%" stop-color="#d9a53c" />
+      <stop offset="100%" stop-color="#7fb0d9" />
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="600" rx="48" fill="url(#bg)" />
+
+  <g transform="translate(26,-41)">
+    <rect x="66" y="106" width="380" height="300" rx="150" fill="none" stroke="#26324a" stroke-width="18" />
+
+    <polyline
+      points="112,332 186,300 232,362 300,206 356,244 404,190"
+      fill="none"
+      stroke="url(#signal)"
+      stroke-width="15"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <rect x="404" y="226" width="14" height="60" fill="#d9a53c" />
+
+    <path d="M 420 214 L 482 256 L 420 298 Z" fill="#d9703f" />
+
+    <g stroke-linecap="round" fill="none" stroke="#e6ebf2">
+      <g transform="translate(168,300) scale(0.8)" stroke-width="17">
+        <circle cx="2" cy="-72" r="15" fill="#e6ebf2" stroke="none" />
+        <line x1="0" y1="-58" x2="8" y2="-8" />
+        <line x1="8" y1="-8" x2="-32" y2="44" />
+        <line x1="8" y1="-8" x2="46" y2="24" />
+        <line x1="4" y1="-55" x2="-26" y2="-30" stroke-width="10" />
+        <line x1="4" y1="-55" x2="32" y2="-38" stroke-width="10" />
+      </g>
+
+      <g transform="translate(252,300) scale(0.8)" stroke-width="17">
+        <circle cx="2" cy="-72" r="15" fill="#e6ebf2" stroke="none" />
+        <line x1="0" y1="-58" x2="8" y2="-8" />
+        <line x1="8" y1="-8" x2="-32" y2="44" />
+        <line x1="8" y1="-8" x2="46" y2="24" />
+        <line x1="4" y1="-55" x2="-26" y2="-30" stroke-width="10" />
+        <line x1="4" y1="-55" x2="32" y2="-38" stroke-width="10" />
+      </g>
+    </g>
+  </g>
+
+  <text
+    x="300"
+    y="452"
+    text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="900"
+    font-size="68"
+    letter-spacing="6"
+    fill="#e6ebf2"
+  >RELAY</text>
+
+  <rect x="140" y="470" width="320" height="38" rx="8" fill="#111925" stroke="#26324a" stroke-width="1.5" />
+  <text
+    x="300"
+    y="495"
+    text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="700"
+    font-size="16"
+    letter-spacing="1.5"
+    fill="#9fabbf"
+  >COACH SIGNAL FOR TRACK &amp; XC</text>
+
+  <text
+    x="300"
+    y="548"
+    text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    font-weight="700"
+    font-size="19"
+    letter-spacing="0.5"
+    fill="#8a97ad"
+  >CATCHES OVERTRAINING. PREVENTS INJURIES.</text>
+</svg>

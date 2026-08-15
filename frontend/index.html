@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Relay — overreaching radar</title>
+
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <!-- iOS ignores the manifest's own icon list -- this is the one it
+         actually uses for the home-screen icon, and must be a plain
+         square PNG (no baked-in rounding -- iOS applies its own mask). -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0a0e16" />
+    <!-- Installed-to-home-screen Safari: runs full-screen with no
+         browser chrome, and "black-translucent" lets the app's own dark
+         background show through the status bar instead of a jarring
+         white/default bar. Android reads theme_color from the manifest
+         instead -- these two are the iOS-specific half of "add to home
+         screen" support (see README's PWA section for why iOS needs a
+         real install to even receive push notifications). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Relay" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

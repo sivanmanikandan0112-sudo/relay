@@ -336,6 +336,42 @@ on purpose — coach accounts are now only ever created by an admin running
 The coach card on the landing page is informational only, with no button, and points a coach who
 already has an account at **Sign in**.
 
+### Progressive Web App
+
+The frontend is installable — "Add to Home Screen" on a phone, or the install icon in a desktop
+browser's address bar — and works offline for the app shell (though check-in data itself always
+still needs a live connection; see caching strategy below). Built with
+[`vite-plugin-pwa`](https://vite-pwa-org.netlify.app/) using the **`injectManifest`** strategy
+rather than the plugin's simpler `generateSW` default, specifically because push notifications
+(planned next) need a hand-written `push`/`notificationclick` handler in the same service worker
+file — `generateSW` only lets you configure caching rules, not add arbitrary event listeners.
+
+- **Manifest + icons** — `frontend/vite.config.ts`'s `VitePWA({ manifest: {...} })` generates
+  `manifest.webmanifest` at build time (name, `display: "standalone"`, theme/background color
+  matching the app's own dark navy). Icons live as plain files in `frontend/public/`: `icon-192.png`
+  / `icon-512.png` for normal display, plus dedicated `icon-maskable-*.png` variants (content scaled
+  to ~70% and centered) for Android's adaptive-icon masking, and `apple-touch-icon.png` (180×180,
+  no baked-in rounding) since iOS ignores the manifest's icon list entirely and only ever reads the
+  `<link rel="apple-touch-icon">` in `index.html`.
+- **Service worker** — [`frontend/src/sw.ts`](frontend/src/sw.ts), built by the same Vite/Rollup
+  pipeline as the app itself (not a hand-copied static file), then registered by
+  `vite-plugin-pwa`'s injected runtime. `precacheAndRoute(self.__WB_MANIFEST)` (Workbox) precaches
+  the whole built app shell (JS/CSS/HTML/icons) for offline load. `/api/*` requests deliberately use
+  a **`NetworkFirst`** strategy, not cache-first — a stale readiness score or check-in history would
+  be actively misleading for a training-load tool, so the network is always tried first, with the
+  cache only as a fallback if it's unreachable.
+- **Update flow** — `registerType: "prompt"`, not `"autoUpdate"`: a new deployed version sits
+  "waiting" rather than silently swapping the running app out from under someone mid check-in.
+  [`components/UpdateToast.tsx`](frontend/src/components/UpdateToast.tsx), mounted once at the
+  `App` root (so it works on every page regardless of auth state) via `virtual:pwa-register/react`'s
+  `useRegisterSW`, shows a small "A new version of Relay is available" toast with a **Refresh**
+  button that calls `updateServiceWorker(true)` to activate the waiting worker and reload.
+- **Local testing note** — the service worker only activates against a real production build
+  (`devOptions.enabled: false` in `vite.config.ts` — `vite dev`'s own HMR server doesn't need one).
+  Use the `relay-frontend-preview` launch config (`npm run preview -w frontend`, port 4173) after
+  `npm run build -w frontend` to test installability/offline/update behavior locally, not the
+  regular dev server.
+
 ### Google sign-in
 
 Optional, additional login method — **linked to an existing account**, not a signup bypass.

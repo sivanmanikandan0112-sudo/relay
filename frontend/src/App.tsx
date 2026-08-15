@@ -25,6 +25,7 @@ import { AdminSchoolDetail } from "./pages/admin/AdminSchoolDetail";
 import { AdminUsers } from "./pages/admin/AdminUsers";
 import { AdminUserDetail } from "./pages/admin/AdminUserDetail";
 import { AdminActivity } from "./pages/admin/AdminActivity";
+import { UpdateToast } from "./components/UpdateToast";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -49,50 +50,53 @@ function RequireSuperAdmin({ children }: { children: React.ReactElement }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/join" element={<Join />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/accept-invite/:token" element={<AcceptInvite />} />
-      <Route
-        element={
-          <RequireAuth>
-            <Layout />
-          </RequireAuth>
-        }
-      >
-        <Route path="/profile" element={<Profile />} />
+    <>
+      <UpdateToast />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/join" element={<Join />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/accept-invite/:token" element={<AcceptInvite />} />
+        <Route
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
+          <Route path="/profile" element={<Profile />} />
 
-        <Route path="/brief" element={<RequireRole role="COACH"><Brief /></RequireRole>} />
-        <Route path="/dashboard" element={<RequireRole role="COACH"><Dashboard /></RequireRole>} />
-        <Route path="/injuries" element={<RequireRole role="COACH"><Injuries /></RequireRole>} />
-        <Route path="/invite" element={<RequireRole role="COACH"><CoachInvites /></RequireRole>} />
-        <Route path="/school" element={<RequireRole role="COACH"><School /></RequireRole>} />
-        <Route path="/how-it-works" element={<RequireRole role="COACH"><HowItWorks /></RequireRole>} />
+          <Route path="/brief" element={<RequireRole role="COACH"><Brief /></RequireRole>} />
+          <Route path="/dashboard" element={<RequireRole role="COACH"><Dashboard /></RequireRole>} />
+          <Route path="/injuries" element={<RequireRole role="COACH"><Injuries /></RequireRole>} />
+          <Route path="/invite" element={<RequireRole role="COACH"><CoachInvites /></RequireRole>} />
+          <Route path="/school" element={<RequireRole role="COACH"><School /></RequireRole>} />
+          <Route path="/how-it-works" element={<RequireRole role="COACH"><HowItWorks /></RequireRole>} />
 
-        <Route path="/checkin" element={<RequireRole role="ATHLETE"><AthleteCheckin /></RequireRole>} />
-        <Route path="/runs" element={<RequireRole role="ATHLETE"><AthleteRuns /></RequireRole>} />
-        <Route path="/athlete-guide" element={<RequireRole role="ATHLETE"><AthleteHowItWorks /></RequireRole>} />
-      </Route>
+          <Route path="/checkin" element={<RequireRole role="ATHLETE"><AthleteCheckin /></RequireRole>} />
+          <Route path="/runs" element={<RequireRole role="ATHLETE"><AthleteRuns /></RequireRole>} />
+          <Route path="/athlete-guide" element={<RequireRole role="ATHLETE"><AthleteHowItWorks /></RequireRole>} />
+        </Route>
 
-      <Route
-        element={
-          <RequireSuperAdmin>
-            <AdminLayout />
-          </RequireSuperAdmin>
-        }
-      >
-        <Route path="/admin" element={<AdminOverview />} />
-        <Route path="/admin/coaches" element={<AdminCoaches />} />
-        <Route path="/admin/coaches/:id" element={<AdminCoachDetail />} />
-        <Route path="/admin/schools" element={<AdminSchools />} />
-        <Route path="/admin/schools/:id" element={<AdminSchoolDetail />} />
-        <Route path="/admin/users" element={<AdminUsers />} />
-        <Route path="/admin/users/:id" element={<AdminUserDetail />} />
-        <Route path="/admin/activity" element={<AdminActivity />} />
-      </Route>
-    </Routes>
+        <Route
+          element={
+            <RequireSuperAdmin>
+              <AdminLayout />
+            </RequireSuperAdmin>
+          }
+        >
+          <Route path="/admin" element={<AdminOverview />} />
+          <Route path="/admin/coaches" element={<AdminCoaches />} />
+          <Route path="/admin/coaches/:id" element={<AdminCoachDetail />} />
+          <Route path="/admin/schools" element={<AdminSchools />} />
+          <Route path="/admin/schools/:id" element={<AdminSchoolDetail />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/users/:id" element={<AdminUserDetail />} />
+          <Route path="/admin/activity" element={<AdminActivity />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
