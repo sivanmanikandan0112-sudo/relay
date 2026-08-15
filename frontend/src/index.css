@@ -142,6 +142,16 @@ a:hover { color: #e98a5c; }
   margin: 0 auto;
 }
 
+/* ---------- Footer (Layout.tsx + Home.tsx) ---------- */
+.app-footer {
+  text-align: center;
+  padding: 18px 22px 26px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.app-footer a { color: var(--text-faint-2); text-decoration: underline; }
+
 .eyebrow-mono {
   font-family: var(--font-mono);
   font-size: 11px;

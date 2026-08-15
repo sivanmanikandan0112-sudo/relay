@@ -4,6 +4,7 @@ import { api, type Squad } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { GenderGate } from "./GenderGate";
 import { NoCoachNotice } from "./NoCoachNotice";
+import { Footer } from "./Footer";
 
 const COACH_TABS = [
   { to: "/brief", label: "Brief" },
@@ -123,6 +124,7 @@ export function Layout() {
         </nav>
       )}
       <main className="page">{needsCoach ? <NoCoachNotice /> : <Outlet context={{ squadId }} />}</main>
+      <Footer />
     </div>
   );
 }

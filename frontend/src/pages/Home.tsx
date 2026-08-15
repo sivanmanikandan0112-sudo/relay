@@ -1,5 +1,6 @@
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { Footer } from "../components/Footer";
 
 const COACH_POINTS = [
   "Monday, get the Brief — a short, ranked list of who actually needs a check-in this week, with a plain-language reason",
@@ -109,6 +110,8 @@ export function Home() {
             </div>
           </div>
         </div>
+
+        <Footer />
       </div>
     </div>
   );
