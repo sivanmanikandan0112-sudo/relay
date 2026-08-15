@@ -39,4 +39,20 @@ export const env = {
   // that hasn't been configured yet. Not a secret -- the frontend embeds
   // the same client ID (VITE_GOOGLE_CLIENT_ID) to render the button.
   googleClientId: process.env.GOOGLE_CLIENT_ID,
+
+  // Required for Web Push (lib/push.ts) -- a VAPID keypair identifying
+  // this server to push services (FCM, Mozilla autopush, etc.), one-time
+  // generated with `npx web-push generate-vapid-keys`. Same
+  // optional-at-boot pattern as the rest of this block: lib/push.ts
+  // simply no-ops (trySendPush returns "unconfigured") rather than the
+  // app failing to boot, since push is an enhancement, not something
+  // anything else depends on. vapidPublicKey is not a secret -- the
+  // frontend embeds the same value (VITE_VAPID_PUBLIC_KEY) to subscribe,
+  // exactly like googleClientId/VITE_GOOGLE_CLIENT_ID above. vapidSubject
+  // is a mailto: or https: URL push services may contact if this server
+  // is misbehaving (sending too much, etc.) -- required by the spec
+  // whenever the keys themselves are set.
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:admin@relaycoach.app",
 };

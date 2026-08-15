@@ -55,4 +55,15 @@ export default defineConfig({
       "/api": "http://localhost:4000",
     },
   },
+  // `vite preview` (the relay-frontend-preview launch config -- the only
+  // way to test the real service worker locally, see vite.config.ts's
+  // own devOptions.enabled comment above) doesn't inherit server.proxy;
+  // it needs this separate copy of the same rule to reach the local
+  // backend too.
+  preview: {
+    port: 4173,
+    proxy: {
+      "/api": "http://localhost:4000",
+    },
+  },
 });

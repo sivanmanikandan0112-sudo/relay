@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { getOwnAthleteId } from "../lib/authz.js";
 import { GENDER_TO_SQUAD } from "../lib/gender.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
+import { pushEnabled } from "../lib/push.js";
 
 export const meRouter = Router();
 
@@ -196,4 +197,57 @@ meRouter.post("/google-link", async (req, res) => {
 meRouter.delete("/google-link", async (req, res) => {
   await prisma.user.update({ where: { id: req.user!.sub }, data: { googleId: null } });
   res.json({ linked: false });
+});
+
+const pushSubscribeSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+});
+
+// Both roles, no requireRole -- same bare-requireAuth pattern as GET /
+// above. The Profile toggle that drives this is athlete-only today (see
+// lib/pushReminder.ts's own comment on why), but the endpoint itself
+// isn't the place to enforce that -- it's just "remember this device's
+// subscription for this account", nothing role-specific about the act
+// of subscribing.
+meRouter.post("/push-subscription", async (req, res) => {
+  if (!pushEnabled) return res.status(503).json({ error: "Push notifications aren't configured on this server" });
+  const parsed = pushSubscribeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  // Upsert on endpoint, not create -- a push subscription's endpoint is
+  // a real per-device identity from the push service, so re-subscribing
+  // the same device (e.g. after clearing site data, or just calling
+  // subscribe() again) should replace its keys in place, not pile up
+  // duplicate rows the reminder job would then double-send to.
+  await prisma.pushSubscription.upsert({
+    where: { endpoint: parsed.data.endpoint },
+    update: { userId: req.user!.sub, p256dh: parsed.data.keys.p256dh, auth: parsed.data.keys.auth },
+    create: {
+      userId: req.user!.sub,
+      endpoint: parsed.data.endpoint,
+      p256dh: parsed.data.keys.p256dh,
+      auth: parsed.data.keys.auth,
+    },
+  });
+  res.json({ subscribed: true });
+});
+
+const pushUnsubscribeSchema = z.object({ endpoint: z.string().url() });
+
+// Deletes by endpoint scoped to the caller's own userId -- so one
+// account can never unsubscribe a different account's device just by
+// guessing/replaying its endpoint. deleteMany (not delete) because a
+// no-op unsubscribe (already gone, e.g. the reminder job already pruned
+// it as "gone") should still 200, not 404 -- the end state the caller
+// wants ("this endpoint isn't subscribed") is already true either way.
+meRouter.delete("/push-subscription", async (req, res) => {
+  const parsed = pushUnsubscribeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  await prisma.pushSubscription.deleteMany({ where: { endpoint: parsed.data.endpoint, userId: req.user!.sub } });
+  res.json({ subscribed: false });
 });

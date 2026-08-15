@@ -72,6 +72,11 @@ export const api = {
   linkGoogle: (idToken: string) => request<{ linked: boolean }>("/me/google-link", { method: "POST", body: JSON.stringify({ idToken }) }),
   unlinkGoogle: () => request<{ linked: boolean }>("/me/google-link", { method: "DELETE" }),
 
+  subscribePush: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    request<{ subscribed: boolean }>("/me/push-subscription", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: (endpoint: string) =>
+    request<{ subscribed: boolean }>("/me/push-subscription", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
+
   mfaStatus: () => request<{ enabled: boolean; backupCodesRemaining: number }>("/mfa/status"),
   mfaSetup: () => request<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }>("/mfa/setup", { method: "POST" }),
   mfaVerifySetup: (code: string) =>

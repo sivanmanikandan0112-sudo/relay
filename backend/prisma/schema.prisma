@@ -98,6 +98,7 @@ model User {
   resetTokens   PasswordResetToken[]
   loginEvents   LoginEvent[]
   decidedJoinRequests SchoolJoinRequest[] // requests this coach approved/rejected -- see SchoolJoinRequest.decidedBy
+  pushSubscriptions PushSubscription[]
   createdAt     DateTime  @default(now())
 }
 
@@ -374,4 +375,27 @@ model Note {
   createdAt DateTime @default(now())
 
   @@index([athleteId])
+}
+
+// A single browser/device's Web Push subscription (the object returned
+// by pushManager.subscribe() -- see frontend/src/lib/push.ts), owned by
+// one User. One row per device, not per account: someone who opts in on
+// their phone and their laptop gets two rows, and both receive a
+// reminder -- there's no single "push enabled" flag on User itself.
+// endpoint is globally unique (it's a real per-device push-service URL,
+// e.g. from FCM or Mozilla's autopush) so re-subscribing the same
+// device is an upsert, not a duplicate row. p256dh/auth are the two
+// keys the push service needs to encrypt the payload -- see
+// lib/push.ts's trySendPush, which pairs them back into the
+// {endpoint, keys: {p256dh, auth}} shape web-push expects.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

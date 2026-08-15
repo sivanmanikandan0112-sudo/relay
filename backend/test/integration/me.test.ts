@@ -195,3 +195,21 @@ describe("readiness visibility (self-service, athlete-owned)", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("POST /api/me/push-subscription with no VAPID keys configured", () => {
+  // Unlike pushSubscription.test.ts (which mocks pushEnabled to true to
+  // test the route's own upsert/ownership logic), this exercises the
+  // real, unmocked lib/push.js -- no VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY
+  // is set anywhere in this test tier, the same actual state production
+  // is in right now (see push.ts's own comment).
+  it("503s rather than silently accepting a subscription nothing will ever use", async () => {
+    await createAthlete({ username: "ath.push.unconfigured", firstName: "Push", lastName: "Unconfigured", squad: "GIRLS" });
+    const token = await loginAs("ath.push.unconfigured");
+
+    const res = await request(app)
+      .post("/api/me/push-subscription")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ endpoint: "https://push.example.com/x", keys: { p256dh: "a", auth: "b" } });
+    expect(res.status).toBe(503);
+  });
+});

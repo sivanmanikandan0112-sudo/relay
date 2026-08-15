@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { renderGoogleButton } from "../lib/google";
+import { PUSH_CONFIGURED, getExistingSubscription, pushSupported, subscribeToPush, unsubscribeFromPush } from "../lib/push";
 
 const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -36,11 +37,52 @@ export function Profile() {
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState(false);
 
+  // --- Push notifications (athlete-only) -------------------------------
+  const [pushEndpoint, setPushEndpoint] = useState<string | null>(null); // this device's current subscription, if any -- null until checked
+  const [pushChecked, setPushChecked] = useState(false);
+  const [pushSaving, setPushSaving] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+
   function refreshMfaStatus() {
     api.mfaStatus().then(setMfaStatus);
   }
 
   useEffect(refreshMfaStatus, []);
+
+  // Reads this device's actual current subscription state from the
+  // browser (not from the backend -- the backend only knows what was
+  // last POSTed, but the source of truth for "is this device subscribed
+  // right now" is the Push API itself, e.g. after the user cleared site
+  // data or revoked the permission outside the app).
+  useEffect(() => {
+    if (user?.role !== "ATHLETE" || !PUSH_CONFIGURED || !pushSupported()) {
+      setPushChecked(true);
+      return;
+    }
+    getExistingSubscription()
+      .then((sub) => setPushEndpoint(sub?.endpoint ?? null))
+      .finally(() => setPushChecked(true));
+  }, [user?.role]);
+
+  async function handleTogglePush(enable: boolean) {
+    setPushError(null);
+    setPushSaving(true);
+    try {
+      if (enable) {
+        const subscription = await subscribeToPush();
+        await api.subscribePush(subscription);
+        setPushEndpoint(subscription.endpoint);
+      } else if (pushEndpoint) {
+        await api.unsubscribePush(pushEndpoint);
+        await unsubscribeFromPush();
+        setPushEndpoint(null);
+      }
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : "Couldn't save that");
+    } finally {
+      setPushSaving(false);
+    }
+  }
 
   // Only renders a button while not already linked -- a no-op if
   // VITE_GOOGLE_CLIENT_ID isn't set (see lib/google.ts).
@@ -270,6 +312,30 @@ export function Profile() {
           {readinessError && (
             <p className="error" style={{ marginTop: 8 }}>
               {readinessError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {user?.role === "ATHLETE" && PUSH_CONFIGURED && pushChecked && pushSupported() && (
+        <div className="panel">
+          <h2>Check-in reminders</h2>
+          <p style={{ color: "var(--text-dim)", fontSize: 13.5 }}>
+            Get a notification on this device if you haven't logged today's check-in yet — sent once a day, only on
+            days you haven't already checked in. Turn it on separately on every device you want reminded on.
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, marginTop: 10 }}>
+            <input
+              type="checkbox"
+              checked={!!pushEndpoint}
+              disabled={pushSaving}
+              onChange={(e) => handleTogglePush(e.target.checked)}
+            />
+            Remind me on this device if I haven't checked in
+          </label>
+          {pushError && (
+            <p className="error" style={{ marginTop: 8 }}>
+              {pushError}
             </p>
           )}
         </div>

@@ -370,7 +370,51 @@ file — `generateSW` only lets you configure caching rules, not add arbitrary e
   (`devOptions.enabled: false` in `vite.config.ts` — `vite dev`'s own HMR server doesn't need one).
   Use the `relay-frontend-preview` launch config (`npm run preview -w frontend`, port 4173) after
   `npm run build -w frontend` to test installability/offline/update behavior locally, not the
-  regular dev server.
+  regular dev server. That config's `vite preview` doesn't inherit `server.proxy` the way `vite dev`
+  does, so `vite.config.ts` also has its own `preview.proxy` copy of the same `/api` rule.
+
+### Push notifications
+
+Optional, athlete-only, self-service: "remind me on this device if I haven't checked in yet."
+Ships fully code-complete but **inert** until a real VAPID keypair is configured — same
+code-complete-but-disabled convention as [Google sign-in](#google-sign-in) — so this deployment
+runs exactly as it did before this feature until that's done (see
+[Push notification setup](#push-notification-setup) below).
+
+- **One row per device, not per account** ([`PushSubscription`](backend/prisma/schema.prisma) --
+  `userId`, `endpoint`, the `p256dh`/`auth` keys the push service needs to encrypt the payload).
+  Someone who opts in on their phone and their laptop gets two rows and both get reminded; there's
+  no single "push enabled" flag on `User`. `endpoint` is globally unique (it's a real per-device
+  identity from the browser's push service), so re-subscribing the same device is an upsert, not a
+  duplicate.
+- **Backend** — [`lib/push.ts`](backend/src/lib/push.ts)'s `trySendPush` wraps
+  [`web-push`](https://www.npmjs.com/package/web-push), never throws (same `trySendEmail` spirit as
+  [error handling](#error-handling) above), and returns `"sent"` / `"gone"` (the push service
+  confirms the subscription is dead — 404/410) / `"failed"` (transient, safe to retry) /
+  `"unconfigured"`. `POST`/`DELETE /api/me/push-subscription` (both roles, no `requireRole` --
+  subscribing itself isn't role-specific) save/remove one device's row, scoped to the caller's own
+  account.
+- **The daily reminder** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
+  `sendCheckinReminders`, scheduled once a day at 18:00 UTC by a `node-cron` job in
+  [`src/index.ts`](backend/src/index.ts) (not `app.ts`, which every test file imports via
+  supertest and deliberately has no side effects of its own — see its own top-of-file comment).
+  Finds every athlete with at least one subscription and no check-in yet today, sends each of their
+  devices a reminder, and deletes any subscription the push service reports as `"gone"`. Coaches are
+  never included -- the query only ever joins through `Athlete`, so a coach's own subscription (the
+  Profile toggle is athlete-only, but the endpoint itself doesn't enforce that) simply never
+  matches, no special-casing needed. No per-athlete timezone is tracked anywhere in this app, so
+  this is one fixed UTC hour for everyone -- the same simplification `dayKey`/`resolveSubmissionDay`
+  already make (see [Backdating](#backdating-a-check-in-or-run) above).
+- **Service worker** — the actual reason `injectManifest` (not the simpler `generateSW`) was picked
+  for the whole [PWA setup](#progressive-web-app) in the first place: `push` and `notificationclick`
+  handlers in [`src/sw.ts`](frontend/src/sw.ts) show the OS notification and deep-link to `/checkin`
+  on click, focusing an already-open tab there instead of piling up duplicates.
+- **Frontend** — [`lib/push.ts`](frontend/src/lib/push.ts) wraps `pushManager.subscribe`/
+  `unsubscribe` directly (no wrapper library, same convention as `lib/google.ts`). The **My
+  Profile** toggle (athlete-only) requests notification permission, subscribes, and POSTs the
+  result to the backend; unchecking it does the reverse. Gated on `VITE_VAPID_PUBLIC_KEY` being set
+  at build time (`PUSH_CONFIGURED`) exactly like `GOOGLE_CONFIGURED` -- unset, the whole section
+  just doesn't render.
 
 ### Google sign-in
 
@@ -443,6 +487,8 @@ an incidental side effect of which button someone happened to click.
   doesn't change the score itself. See [Data confidence](#data-confidence) below.
 - **Injury** — tracked per athlete with status (`ACTIVE` / `RECOVERING` / `RESOLVED`)
 - **Note** — a coach's check-in note left on an athlete
+- **PushSubscription** — one row per device's Web Push subscription (endpoint + encryption keys),
+  owned by a `User`; see [Push notifications](#push-notifications)
 
 ### Readiness status
 
@@ -702,6 +748,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | DELETE | `/api/me/google-link` | Unlink Google from your account |
 | PATCH | `/api/me/readiness-visibility` | Athlete only: opt in/out of seeing your own readiness score |
 | GET | `/api/me/readiness` | Athlete only: your current readiness if you've opted in (`{shared: false, latest: null}` otherwise) |
+| POST | `/api/me/push-subscription` | Save this device's Web Push subscription (both roles; 503 if VAPID isn't configured) |
+| DELETE | `/api/me/push-subscription` | Remove this device's subscription (scoped to your own account) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
 | POST | `/api/mfa/setup` | Generate a pending TOTP secret + QR code (not yet enabled) |
 | POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |
@@ -788,6 +836,8 @@ build/start at its own workspace with `-w`:
 | `FRONTEND_URL` | No (if using Resend) | The frontend's public URL, used to build links inside real emails, e.g. `https://relaycoach.app` |
 | `MFA_ENCRYPTION_KEY` | **Yes, before anyone enables 2FA** | 64 hex characters (32 bytes) for AES-256-GCM — generate with `openssl rand -hex 32`. Unlike email, there's no simulate fallback: MFA setup fails with a clear error if this is missing rather than ever storing a TOTP secret insecurely. Use a different key per environment; never commit a real one. |
 | `GOOGLE_CLIENT_ID` | No | Enables `POST /api/auth/google` and `/api/me/google-link` to actually verify tokens. Unset, the routes still exist but any call fails loudly (`verifyGoogleIdToken` throws before doing anything) rather than silently accepting an unverified identity. See [Google sign-in setup](#google-sign-in-setup). |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | No | Enables [push notifications](#push-notifications). Unset, `POST /api/me/push-subscription` 503s and the daily reminder job no-ops (`skipped: true`) — see [Push notification setup](#push-notification-setup). Generate with `npx web-push generate-vapid-keys`. |
+| `VAPID_SUBJECT` | No | A `mailto:` or `https:` URL push services may contact if this server misbehaves. Defaults to `mailto:admin@relaycoach.app`. Only meaningful once the two keys above are set. |
 
 **Frontend:**
 
@@ -795,6 +845,26 @@ build/start at its own workspace with `-w`:
 |---|---|---|
 | `VITE_API_BASE_URL` | Yes, once deployed separately from the backend | The backend's public base URL + `/api`, e.g. `https://api.relaycoach.app/api`. Unset, API calls go to `/api` on the frontend's own origin, which only works when a dev proxy or shared origin exists — see [`lib/api.ts`](frontend/src/lib/api.ts). Baked in at **build** time (Vite), so set it before the build runs, not just at runtime. |
 | `VITE_GOOGLE_CLIENT_ID` | No | Same OAuth client ID as the backend's `GOOGLE_CLIENT_ID` — not a secret, it's meant to be embedded in the frontend bundle. Unset, the "Sign in with Google" button and the Profile link/unlink panel just don't render — see [Google sign-in setup](#google-sign-in-setup). Baked in at **build** time. |
+| `VITE_VAPID_PUBLIC_KEY` | No | Same VAPID public key as the backend's `VAPID_PUBLIC_KEY` — not a secret, meant to be embedded in the frontend bundle (the private half never leaves the server). Unset, the "remind me" toggle on Profile just doesn't render — see [Push notification setup](#push-notification-setup). Baked in at **build** time. |
+
+### Push notification setup
+
+Push notifications ([above](#push-notifications)) ship fully code-complete but **inert** until a
+real VAPID keypair exists — right now neither `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` nor
+`VITE_VAPID_PUBLIC_KEY` is set anywhere, so the app runs exactly as it did before this feature,
+with no partial/broken toggle. To turn it on:
+
+1. Generate a keypair: `npx web-push generate-vapid-keys` (run from `backend/`, where `web-push` is
+   already a dependency). This prints a public and a private key — no external service or account
+   needed, unlike Google sign-in's OAuth client.
+2. Set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` on the Railway **backend** service to those two
+   values, and (optionally) `VAPID_SUBJECT` to a real contact `mailto:` address.
+3. Set `VITE_VAPID_PUBLIC_KEY` on the Railway **frontend** service to the *same public key* (never
+   the private key), then redeploy the frontend — baked in at build time, so an env-var-only change
+   on Railway still needs a rebuild, not just a restart.
+4. Once all three are set, the "Check-in reminders" toggle appears on Profile for athletes
+   automatically — no further code changes — and the daily reminder cron job in
+   [`index.ts`](backend/src/index.ts) starts actually sending instead of no-opping.
 
 ### Google sign-in setup
 
