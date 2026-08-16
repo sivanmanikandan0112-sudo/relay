@@ -152,7 +152,12 @@ export async function computeReadinessBreakdown(athleteId: string, now: Date = n
   const score = Math.max(0, Math.min(100, Math.round(readiness)));
   const band = bandForReadiness(score);
   const status = resolveStatus(band, activeInjury, recoveringInjury);
-  const summary = plainSignal(athlete.name, status, recentWellDaily ?? 3.5);
+  const summary = plainSignal(
+    athlete.name,
+    status,
+    { zLoad: zLoadValue, zEffortCost: zEffortCostValue, zWellDaily: zWellDailyValue },
+    recentWellDaily ?? 3.5
+  );
 
   return {
     athleteId,
