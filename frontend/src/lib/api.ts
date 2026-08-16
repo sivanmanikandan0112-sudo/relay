@@ -100,6 +100,10 @@ export const api = {
     }),
   injuries: (squadId?: string) =>
     request<Injury[]>(`/injuries${squadId ? `?squadId=${squadId}` : ""}`),
+  logInjury: (athleteId: string, description: string) =>
+    request<Injury>("/injuries", { method: "POST", body: JSON.stringify({ athleteId, description }) }),
+  updateInjuryStatus: (id: string, status: Injury["status"]) =>
+    request<Injury>(`/injuries/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   addNote: (athleteId: string, body: string) =>
     request<Note>("/notes", { method: "POST", body: JSON.stringify({ athleteId, body }) }),
   notesForAthlete: (athleteId: string) => request<Note[]>(`/notes/athlete/${athleteId}`),

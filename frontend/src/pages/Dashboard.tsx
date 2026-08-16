@@ -146,7 +146,9 @@ export function Dashboard() {
         })}
       </div>
 
-      {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} onRemoved={refresh} />}
+      {detailFor && (
+        <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} onRemoved={refresh} onChanged={refresh} />
+      )}
       {noteFor && (
         <NoteModal
           athleteId={noteFor.id}

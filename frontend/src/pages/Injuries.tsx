@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { api, type Injury } from "../lib/api";
+import { api, type Athlete, type Injury } from "../lib/api";
 import { initials } from "../lib/format";
+import { InjuryModal } from "../components/InjuryModal";
 
 const PILL: Record<Injury["status"], { label: string; color: string; border: string }> = {
   ACTIVE: { label: "Out", color: "#7a8291", border: "#39414f" },
@@ -12,21 +13,53 @@ const PILL: Record<Injury["status"], { label: string; color: string; border: str
 export function Injuries() {
   const { squadId } = useOutletContext<{ squadId: string | null }>();
   const [injuries, setInjuries] = useState<Injury[]>([]);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function refresh() {
     if (!squadId) return;
     api.injuries(squadId).then(setInjuries).catch(() => {});
+  }
+
+  useEffect(refresh, [squadId]);
+  useEffect(() => {
+    if (!squadId) return;
+    api.athletesInSquad(squadId).then(setAthletes).catch(() => {});
   }, [squadId]);
 
   const active = injuries.filter((i) => i.status !== "RESOLVED");
 
+  async function updateStatus(id: string, status: Injury["status"]) {
+    setUpdatingId(id);
+    setError(null);
+    try {
+      await api.updateInjuryStatus(id, status);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update that injury");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   return (
     <section>
-      <h1 className="page-title">INJURIES</h1>
-      <p className="page-subtitle" style={{ maxWidth: "64ch" }}>
-        Log an injury the day it happens, and switch on return-to-run protocol so expected-slow paces don't
-        trip the risk flags.
-      </p>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 className="page-title">INJURIES</h1>
+          <p className="page-subtitle" style={{ maxWidth: "64ch" }}>
+            Log an injury the day it happens, and switch on return-to-run protocol so expected-slow paces
+            don't trip the risk flags.
+          </p>
+        </div>
+        <button className="btn-primary" disabled={athletes.length === 0} onClick={() => setLogOpen(true)}>
+          + Log injury
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
 
       <div className="injuries-list">
         {active.map((injury) => {
@@ -78,11 +111,41 @@ export function Injuries() {
                   warning — Relay won't ping you and they won't see an alarming status.
                 </p>
               )}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                {isActive && (
+                  <button
+                    className="btn-secondary"
+                    disabled={updatingId === injury.id}
+                    onClick={() => updateStatus(injury.id, "RECOVERING")}
+                  >
+                    Start return-to-run protocol
+                  </button>
+                )}
+                <button
+                  className="btn-secondary"
+                  style={{ color: "#4ea373", borderColor: "#234a30" }}
+                  disabled={updatingId === injury.id}
+                  onClick={() => updateStatus(injury.id, "RESOLVED")}
+                >
+                  {updatingId === injury.id ? "Saving…" : "Mark resolved"}
+                </button>
+              </div>
             </div>
           );
         })}
         {active.length === 0 && <p className="page-subtitle">No injuries on record.</p>}
       </div>
+
+      {logOpen && (
+        <InjuryModal
+          athletes={athletes}
+          onClose={() => setLogOpen(false)}
+          onSaved={() => {
+            setLogOpen(false);
+            refresh();
+          }}
+        />
+      )}
     </section>
   );
 }

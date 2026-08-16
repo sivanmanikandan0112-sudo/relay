@@ -11,6 +11,7 @@ import {
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
+import { InjuryModal } from "./InjuryModal";
 import { AthleteStats } from "./AthleteStats";
 import { WorkloadAnalysis } from "./WorkloadAnalysis";
 
@@ -21,11 +22,16 @@ interface DetailDrawerProps {
   // page (Brief/Dashboard) refetch its own athlete list so the removed
   // athlete actually disappears from it, not just from this drawer.
   onRemoved?: () => void;
+  // Called after logging an injury or changing its status -- both change
+  // the athlete's readiness status/score server-side (recomputeReadiness),
+  // so the parent's own list needs a refetch too, not just this drawer's
+  // local state. Drawer stays open (unlike onRemoved, which closes it).
+  onChanged?: () => void;
 }
 
 const SQUAD_LABEL: Record<string, string> = { GIRLS: "Girls squad", BOYS: "Boys squad" };
 
-export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProps) {
+export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: DetailDrawerProps) {
   const [athlete, setAthlete] = useState<AthleteDetail | null>(null);
   const [history, setHistory] = useState<ReadinessScoreRecord[]>([]);
   const [wellness, setWellness] = useState<WellnessEntry[]>([]);
@@ -33,6 +39,9 @@ export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProp
   const [notes, setNotes] = useState<Note[]>([]);
   const [athleteStats, setAthleteStats] = useState<AthleteStatsResponse | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [injuryModalOpen, setInjuryModalOpen] = useState(false);
+  const [injuryUpdating, setInjuryUpdating] = useState(false);
+  const [injuryError, setInjuryError] = useState<string | null>(null);
 
   // --- Remove from roster ------------------------------------------
   const [removeConfirming, setRemoveConfirming] = useState(false);
@@ -50,6 +59,20 @@ export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProp
 
   useEffect(refresh, [athleteId]);
 
+  async function handleInjuryStatus(id: string, status: "RECOVERING" | "RESOLVED") {
+    setInjuryUpdating(true);
+    setInjuryError(null);
+    try {
+      await api.updateInjuryStatus(id, status);
+      refresh();
+      onChanged?.();
+    } catch (err) {
+      setInjuryError(err instanceof Error ? err.message : "Couldn't update that injury");
+    } finally {
+      setInjuryUpdating(false);
+    }
+  }
+
   async function handleRemove() {
     setRemoveError(null);
     setRemoving(true);
@@ -64,6 +87,8 @@ export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProp
   }
 
   if (!athlete) return null;
+
+  const openInjury = athlete.injuries.find((i) => i.status !== "RESOLVED");
 
   const latest = history[history.length - 1];
   const prev = history[history.length - 2];
@@ -218,6 +243,52 @@ export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProp
           </div>
 
           <div className="drawer-section-label">
+            <span>INJURY STATUS</span>
+            {!openInjury && (
+              <button className="drawer-note-btn" onClick={() => setInjuryModalOpen(true)}>
+                + Log injury
+              </button>
+            )}
+          </div>
+          {openInjury ? (
+            <div
+              className="drawer-plain"
+              style={{ borderLeft: `3px solid ${openInjury.status === "ACTIVE" ? "#7a8291" : "#3d9c9c"}` }}
+            >
+              <p style={{ margin: "0 0 10px", fontSize: 13 }}>
+                {openInjury.status === "ACTIVE" ? "Out — " : "Return-to-run protocol — "}
+                {openInjury.description}
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                {openInjury.status === "ACTIVE" && (
+                  <button
+                    className="btn-secondary"
+                    disabled={injuryUpdating}
+                    onClick={() => handleInjuryStatus(openInjury.id, "RECOVERING")}
+                  >
+                    Start return-to-run protocol
+                  </button>
+                )}
+                <button
+                  className="btn-secondary"
+                  style={{ color: "#4ea373", borderColor: "#234a30" }}
+                  disabled={injuryUpdating}
+                  onClick={() => handleInjuryStatus(openInjury.id, "RESOLVED")}
+                >
+                  {injuryUpdating ? "Saving…" : "Mark resolved"}
+                </button>
+              </div>
+              {injuryError && (
+                <p className="error" style={{ marginTop: 8 }}>
+                  {injuryError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="drawer-legend">No open injury on record.</div>
+          )}
+
+          <div className="drawer-section-label">
             <span>YOUR NOTES TO THEM</span>
             <button className="drawer-note-btn" onClick={() => setNoteOpen(true)}>
               + Leave a note
@@ -271,6 +342,18 @@ export function DetailDrawer({ athleteId, onClose, onRemoved }: DetailDrawerProp
         </div>
       </div>
 
+      {injuryModalOpen && (
+        <InjuryModal
+          athleteId={athleteId}
+          athleteName={athlete.name}
+          onClose={() => setInjuryModalOpen(false)}
+          onSaved={() => {
+            setInjuryModalOpen(false);
+            refresh();
+            onChanged?.();
+          }}
+        />
+      )}
       {noteOpen && (
         <NoteModal
           athleteId={athleteId}

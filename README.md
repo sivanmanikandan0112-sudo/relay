@@ -48,9 +48,9 @@ relay/
 │       ├── pages/       Brief, Dashboard, Injuries, CoachInvites, How It Works,
 │       │                Login, ForgotPassword, ResetPassword, AcceptInvite,
 │       │                AthleteCheckin, AthleteRuns, AthleteHowItWorks
-│       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, MatchingSection
+│       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, InjuryModal, MatchingSection
 │       ├── context/      AuthContext
-│       └── lib/          api.ts (REST client), status.ts, matching.ts
+│       └── lib/          api.ts (REST client), status.ts, format.ts
 ├── docs/
 │   └── math-behind-relay.md   The scoring math/stats, cross-referenced against the code
 ├── proofs/             Scanned handwritten derivation the doc above is based on
@@ -676,6 +676,31 @@ The drawer also has two always-different sections, both backed by
   - **28+ days** — full confidence, colored by the same Fresh/Ease back/Back off band shown
     everywhere else in the app (deliberately one risk scale across the whole app, not a second,
     differently-thresholded one that could disagree with the status pill next to it).
+
+### Logging and managing injuries
+
+A coach logs an injury from either the **Injuries** page ("+ Log injury", with an athlete picker
+scoped to the currently-selected squad) or an athlete's own detail drawer ("+ Log injury" under
+INJURY STATUS, athlete already picked). Both open the same
+[`InjuryModal.tsx`](frontend/src/components/InjuryModal.tsx) — just a description and, on the
+Injuries page only, which athlete. `POST /api/injuries` (`{athleteId, description}`) always
+starts the injury at `ACTIVE`/"Out" and stamps `startDate` as *now* — there's no backdating an
+injury's start the way check-ins and runs can be backdated, since the whole point (suppressing
+risk flags for genuinely-injured slow paces) only matters going forward from today.
+
+From there, a coach flips status forward as the athlete progresses: **Start return-to-run
+protocol** (`ACTIVE` → `RECOVERING`) once they're back to easy running at reduced paces, then
+**Mark resolved** (→ `RESOLVED`, either status can go straight there, stamps `endDate`) once
+they're fully back. Both actions call `PATCH /api/injuries/:id` (`{status}`) and immediately
+`recomputeReadiness` for that athlete server-side — this is *why* logging/updating an injury from
+a drawer opened off Brief or the Board also refreshes that page's own list (a new `onChanged`
+prop on `DetailDrawer`, alongside the existing `onRemoved` used for roster removal — `onChanged`
+leaves the drawer open since the athlete didn't disappear, just their status changed), not only
+the drawer itself.
+
+This backend side (`routes/injuries.ts`) already existed and was already fully tested — the gap
+was purely that no frontend UI ever called `POST`/`PATCH /api/injuries`, so there was genuinely no
+way to log one before this.
 
 ### Removing an athlete from the roster
 
