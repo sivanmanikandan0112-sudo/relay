@@ -4,7 +4,9 @@ const STEPS = [
     body: (
       <>
         Each runner spends 10 seconds a day rating how they feel (sleep, energy, mood, motivation,
-        soreness) and logs their runs. That's the raw material — you don't chase anyone for data.
+        soreness) and logs their runs. That's the raw material — you don't chase anyone for data:
+        Relay can remind them automatically if a day slips, and they can always go back and fill
+        one in for up to a week after.
       </>
     ),
   },
@@ -39,7 +41,9 @@ const STEPS = [
       <>
         Tap a name to see the "why" behind the flag, then leave a note that lands on that
         athlete's profile. If someone's hurt, log it in <strong>Injuries</strong> — return-to-run
-        protocol pauses their flags so expected-slow rehab paces don't look like a problem.
+        protocol pauses their flags so expected-slow rehab paces don't look like a problem. When
+        someone graduates or moves on, remove them from your roster from that same detail view —
+        their check-in and run history stays exactly as it is, nothing is lost.
       </>
     ),
   },
@@ -64,6 +68,21 @@ export function HowItWorksContent() {
             </div>
           </div>
         ))}
+      </div>
+      <div className="callout" style={{ background: "#0c1017", border: "1px solid #1e2839" }}>
+        <h3>Getting athletes onto your roster</h3>
+        <p>
+          Invite them directly from <strong>Invite</strong> — bulk-add a list of emails, no squad
+          guessing required; each athlete picks their own gender when they accept, and that's what
+          sorts them onto Girls or Boys. Or share your school's join code (see{" "}
+          <strong>School</strong>) and let them request to join themselves — nobody's on your
+          roster until you approve their request.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          Part of a school with other coaches? You automatically share one roster — any athlete
+          anyone there has ever added shows up for every coach at that school, not just whoever
+          sent the original invite.
+        </p>
       </div>
       <div className="callout" style={{ background: "#0c1017", border: "1px solid #1e2839" }}>
         <h3>What Relay is — and isn't</h3>

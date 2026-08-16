@@ -1,14 +1,20 @@
 const STEPS = [
   {
     title: "Check in once a day",
-    body: "Tap how you're feeling — sleep, energy, mood, motivation, soreness. There's no right answer; honest is what helps. Add a note if something's up.",
+    body: (
+      <>
+        Tap how you're feeling — sleep, energy, mood, motivation, soreness. There's no right
+        answer; honest is what helps. Add a note if something's up. Missed a day? You can go back
+        and fill one in for up to a week — no need to skip it.
+      </>
+    ),
   },
   {
     title: "Log your runs",
     body: (
       <>
-        Add each run by hand in <strong>My Runs</strong>. That's where you'll also see any notes
-        your coach leaves you.
+        Add each run by hand in <strong>My Runs</strong> — same catch-up window if you fall
+        behind. That's also where you'll see any notes your coach leaves you.
       </>
     ),
   },
@@ -22,6 +28,17 @@ const STEPS = [
       </>
     ),
   },
+  {
+    title: "Turn on reminders (optional)",
+    body: (
+      <>
+        Flip on check-in reminders from your <strong>Profile</strong> and Relay will nudge you on
+        this device if a day's check-in goes missing — never a repeat once you've already logged
+        it. You can also add Relay to your home screen like a real app; it works even with no
+        signal.
+      </>
+    ),
+  },
 ];
 
 const CAN_SEE = [
@@ -30,7 +47,10 @@ const CAN_SEE = [
   "Your check-ins and anything you choose to tell them",
 ];
 
-const PRIVATE = ["Your GPS routes and location", "Your raw heart-rate data", "Anything shared with teammates — nobody else sees your numbers"];
+const PRIVATE = [
+  "Anything shared with teammates — nobody else on the team sees your numbers",
+  "Your account & sign-in details — password, two-factor setup, that's all yours",
+];
 
 export function AthleteHowItWorks() {
   return (
