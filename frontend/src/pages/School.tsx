@@ -36,6 +36,10 @@ export function School() {
   const [regenerating, setRegenerating] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
 
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
+  const [resentInviteId, setResentInviteId] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
+
   function refresh() {
     api.mySchool().then((res) => setSchool(res.school));
   }
@@ -94,6 +98,22 @@ export function School() {
       setRequestsError(err instanceof Error ? err.message : "Couldn't reject that request");
     } finally {
       setDecidingId(null);
+    }
+  }
+
+  async function handleResendInvite(inviteId: string) {
+    if (!school) return;
+    setResendingInviteId(inviteId);
+    setResendError(null);
+    try {
+      await api.resendCoachInvite(school.id, inviteId);
+      setResentInviteId(inviteId);
+      setTimeout(() => setResentInviteId((current) => (current === inviteId ? null : current)), 2500);
+      refresh();
+    } catch (err) {
+      setResendError(err instanceof Error ? err.message : "Couldn't resend that invite");
+    } finally {
+      setResendingInviteId((current) => (current === inviteId ? null : current));
     }
   }
 
@@ -397,15 +417,43 @@ export function School() {
       {school.invites.length > 0 && (
         <div className="panel">
           <h2>Pending coach invites</h2>
+          {resendError && (
+            <p className="error" style={{ marginBottom: 8 }}>
+              {resendError}
+            </p>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {school.invites.map((inv) => (
-              <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <div className="run-row">
-                  <span className="run-type">{inv.email}</span>
-                  <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : inv.status === "ACCEPTED" ? "Joined" : "Rejected"}</span>
+            {school.invites.map((inv) => {
+              const expired = new Date(inv.expiresAt) < new Date();
+              return (
+                <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
+                  <div className="run-row">
+                    <span className="run-type">{inv.email}</span>
+                    <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : inv.status === "ACCEPTED" ? "Joined" : "Rejected"}</span>
+                  </div>
+                  {inv.status === "PENDING" && (
+                    <div className="run-row" style={{ marginTop: 8 }}>
+                      <span className="run-meta">
+                        {expired
+                          ? `Link expired ${new Date(inv.expiresAt).toLocaleDateString()}`
+                          : `Link expires ${new Date(inv.expiresAt).toLocaleDateString()}`}
+                      </span>
+                      <button
+                        className="btn-secondary"
+                        disabled={resendingInviteId === inv.id}
+                        onClick={() => handleResendInvite(inv.id)}
+                      >
+                        {resendingInviteId === inv.id
+                          ? "Resending…"
+                          : resentInviteId === inv.id
+                            ? "Resent!"
+                            : "Resend"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

@@ -114,6 +114,7 @@ export const api = {
       body: JSON.stringify({ emails }),
     }),
   cancelInvite: (id: string) => request<void>(`/invites/${id}`, { method: "DELETE" }),
+  resendInvite: (id: string) => request<{ invite: Invite; emailSent: boolean }>(`/invites/${id}/resend`, { method: "POST" }),
 
   // Public, unauthenticated -- the real half of the invite flow: an
   // invited person follows the link built from their invite's token to
@@ -140,6 +141,10 @@ export const api = {
     request<{ invite: Invite; emailSent: boolean }>(`/schools/${schoolId}/invite-coach`, {
       method: "POST",
       body: JSON.stringify({ email }),
+    }),
+  resendCoachInvite: (schoolId: string, inviteId: string) =>
+    request<{ invite: Invite; emailSent: boolean }>(`/schools/${schoolId}/invites/${inviteId}/resend`, {
+      method: "POST",
     }),
   regenerateJoinCode: (schoolId: string) =>
     request<{ joinCode: string }>(`/schools/${schoolId}/regenerate-code`, { method: "POST" }),

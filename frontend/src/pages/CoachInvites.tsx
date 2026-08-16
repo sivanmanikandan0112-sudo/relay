@@ -27,6 +27,8 @@ export function CoachInvites() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resentId, setResentId] = useState<string | null>(null);
 
   function refresh() {
     api.invites().then(setInvites);
@@ -65,6 +67,21 @@ export function CoachInvites() {
       setTimeout(() => setCopiedId((current) => (current === inv.id ? null : current)), 2000);
     } catch {
       setError("Couldn't copy to clipboard — copy the link manually from the invite instead.");
+    }
+  }
+
+  async function resendInvite(inv: Invite) {
+    setResendingId(inv.id);
+    setError(null);
+    try {
+      await api.resendInvite(inv.id);
+      setResentId(inv.id);
+      setTimeout(() => setResentId((current) => (current === inv.id ? null : current)), 2500);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't resend that invite");
+    } finally {
+      setResendingId((current) => (current === inv.id ? null : current));
     }
   }
 
@@ -144,6 +161,15 @@ export function CoachInvites() {
                           {copiedId === inv.id ? "Copied!" : "Copy invite link"}
                         </button>
                       )}
+                      {inv.status === "PENDING" && (
+                        <button
+                          className="btn-secondary"
+                          disabled={resendingId === inv.id}
+                          onClick={() => resendInvite(inv)}
+                        >
+                          {resendingId === inv.id ? "Resending…" : resentId === inv.id ? "Resent!" : "Resend"}
+                        </button>
+                      )}
                       <button
                         className="btn-secondary"
                         style={confirmRemoveId === inv.id ? { color: "#cf5236", borderColor: "#cf5236" } : undefined}
@@ -166,8 +192,8 @@ export function CoachInvites() {
                 </div>
                 {inv.status === "PENDING" && expired && (
                   <p style={{ color: "var(--text-dim)", fontSize: 11.5, marginTop: 6 }}>
-                    This invite link expired {new Date(inv.expiresAt).toLocaleDateString()} — re-invite to get a
-                    fresh one.
+                    This invite link expired {new Date(inv.expiresAt).toLocaleDateString()} — resend to get a fresh
+                    one.
                   </p>
                 )}
                 {inv.status === "ACCEPTED" && (

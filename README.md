@@ -116,6 +116,17 @@ same two-click confirm), once it's just clutter in their invite history. This on
 `Invite` row itself; the athlete's account and their actual roster spot (`CoachAthlete`) are a
 separate, untouched relationship. `REJECTED` invites aren't clearable from either screen today.
 
+A coach can also **resend** any still-`PENDING` invite ("Resend" on the Invite screen —
+`POST /api/invites/:id/resend`) — most useful once the original's 14-day link has expired (the
+skip logic in `POST /invites/bulk` otherwise makes that email un-invitable again without deleting
+the old row first), but works just as well as a plain nudge on one that hasn't expired yet. Resend
+doesn't just re-send the same link: it rotates the invite onto a brand-new token and pushes
+`expiresAt` back out a full 14 days (see [`lib/inviteResend.ts`](backend/src/lib/inviteResend.ts)'s
+shared `rotateInviteToken`) — the old link stops working the moment the new one is issued, same
+"old one dies the instant a new one exists" spirit as regenerating a school's join code. If email
+sending is configured, resending emails the fresh link too; either way the status list's own "copy
+invite link" button always reflects the current, live token afterward.
+
 ### School join code — athlete self-service, coach-approved
 
 The reverse direction from a bulk invite: instead of a coach sending an invite to a specific
@@ -247,6 +258,13 @@ branches at accept time:
   must sign in as *themself* and explicitly confirm (`POST /api/invite-accept/:token/attach`,
   authenticated, checks the caller's own email matches the invite) — the same link renders a
   distinct "log in to confirm you're joining" panel instead of a signup form.
+
+Any coach at that school — not just whoever sent it — can **resend** a still-`PENDING` invite from
+the **School** tab's "Pending coach invites" list (`POST /api/schools/:id/invites/:inviteId/resend`),
+open to any school member on purpose since that list is already shared/school-wide rather than
+scoped to whoever personally sent each one (matching `GET /api/schools/mine`'s own visibility).
+Same `rotateInviteToken` behavior as the athlete-invite resend above — fresh token, expiry pushed
+back a full 14 days, old link stops working immediately.
 
 ### Super admin
 
@@ -828,6 +846,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/invites` | Coach's sent invites, including each one's accept token |
 | POST | `/api/invites/bulk` | Bulk-create invites from a list of emails, no squad needed (coach only) |
 | DELETE | `/api/invites/:id` | Remove a still-pending invite, or clear an already-accepted one off the list (coach only, must be their own; 400 for a rejected invite) |
+| POST | `/api/invites/:id/resend` | Rotate a still-pending athlete invite onto a fresh token/expiry and re-send it (coach only, must be their own; 400 if not pending) |
+| POST | `/api/schools/:id/invites/:inviteId/resend` | Same rotate-and-resend, for a coach-to-school invite (any member coach of that school, not just the sender; 400 if not pending) |
 
 ## Deploying
 

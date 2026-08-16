@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { env } from "../lib/env.js";
+import { rotateInviteToken } from "../lib/inviteResend.js";
 
 export const invitesRouter = Router();
 
@@ -87,6 +88,39 @@ invitesRouter.post("/bulk", async (req, res) => {
     orderBy: { createdAt: "desc" },
   });
   res.status(201).json({ created: toCreate.length, skipped: emails.length - toCreate.length, invites, emailSent: emailEnabled });
+});
+
+// Re-sends a PENDING invite this coach personally sent -- most useful
+// for one that's expired (POST /bulk's own "already pending" skip would
+// otherwise make it impossible to invite that email again without
+// deleting the old row first), but works for a non-expired one too, for
+// a coach who just wants to nudge someone again. Rotates onto a fresh
+// token/expiry via rotateInviteToken rather than resending the same old
+// link -- see that function's own comment for why.
+invitesRouter.post("/:id/resend", async (req, res) => {
+  const invite = await prisma.invite.findUnique({ where: { id: req.params.id } });
+  if (!invite || invite.invitedById !== req.user!.sub || invite.type !== "ATHLETE") {
+    return res.status(404).json({ error: "Not found" });
+  }
+  if (invite.status !== "PENDING") {
+    return res.status(400).json({ error: "Only a pending invite can be resent" });
+  }
+
+  const updated = await rotateInviteToken(invite.id);
+  const coach = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+
+  // The rotation already happened regardless of what follows --
+  // trySendEmail can't fail this response (see its own comment).
+  let emailSent = false;
+  if (emailEnabled) {
+    const acceptUrl = `${env.frontendUrl}/accept-invite/${updated.token}`;
+    emailSent = await trySendEmail({
+      to: updated.email,
+      subject: `${coach.firstName} ${coach.lastName} invited you to Relay`,
+      html: `<p>${coach.firstName} ${coach.lastName} invited you to join the team on Relay.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p><p>This link expires in 14 days.</p>`,
+    });
+  }
+  res.json({ invite: updated, emailSent });
 });
 
 // No route to set an invite's status by hand, on purpose: PENDING ->

@@ -114,3 +114,77 @@ describe("DELETE /api/invites/:id", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("POST /api/invites/:id/resend", () => {
+  it("rotates the token and pushes expiresAt back out, and the old link stops working", async () => {
+    const coach = await createCoach({ username: "coach.resend.rotate", firstName: "Resend", lastName: "Rotate" });
+    const squad = await ensureSquad("GIRLS");
+    const invite = await createInvite({ email: "resend.rotate@example.com", invitedById: coach.id, squadId: squad.id });
+    const oldToken = invite.token;
+    const token = await loginAs("coach.resend.rotate");
+
+    const res = await request(app).post(`/api/invites/${invite.id}/resend`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.invite.id).toBe(invite.id);
+    expect(res.body.invite.token).not.toBe(oldToken);
+    expect(new Date(res.body.invite.expiresAt).getTime()).toBeGreaterThan(new Date(invite.expiresAt).getTime());
+    expect(res.body.invite.status).toBe("PENDING");
+
+    // Old token no longer resolves; new one does.
+    const oldLookup = await request(app).get(`/api/invite-accept/${oldToken}`);
+    expect(oldLookup.status).toBe(404);
+    const newLookup = await request(app).get(`/api/invite-accept/${res.body.invite.token}`);
+    expect(newLookup.status).toBe(200);
+  });
+
+  it("resending an already-expired invite gives it a fresh, non-expired expiresAt", async () => {
+    const coach = await createCoach({ username: "coach.resend.expired", firstName: "Resend", lastName: "Expired" });
+    const squad = await ensureSquad("GIRLS");
+    const invite = await createInvite({ email: "resend.expired@example.com", invitedById: coach.id, squadId: squad.id });
+    await prisma.invite.update({ where: { id: invite.id }, data: { expiresAt: new Date(Date.now() - 86400000) } });
+    const token = await loginAs("coach.resend.expired");
+
+    const res = await request(app).post(`/api/invites/${invite.id}/resend`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(new Date(res.body.invite.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("400s resending an ACCEPTED invite", async () => {
+    const coach = await createCoach({ username: "coach.resend.accepted", firstName: "Resend", lastName: "Accepted" });
+    const squad = await ensureSquad("GIRLS");
+    const invite = await createInvite({ email: "resend.accepted@example.com", invitedById: coach.id, squadId: squad.id, status: "ACCEPTED" });
+    const token = await loginAs("coach.resend.accepted");
+
+    const res = await request(app).post(`/api/invites/${invite.id}/resend`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("404s resending another coach's invite", async () => {
+    const owner = await createCoach({ username: "coach.resend.owner", firstName: "Owner", lastName: "Coach" });
+    await createCoach({ username: "coach.resend.outsider", firstName: "Outsider", lastName: "Coach" });
+    const squad = await ensureSquad("GIRLS");
+    const invite = await createInvite({ email: "resend.owner@example.com", invitedById: owner.id, squadId: squad.id });
+    const token = await loginAs("coach.resend.outsider");
+
+    const res = await request(app).post(`/api/invites/${invite.id}/resend`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("404s resending a COACH_TO_SCHOOL invite through this ATHLETE-scoped route", async () => {
+    const coach = await createCoach({ username: "coach.resend.wrongtype", firstName: "Wrong", lastName: "Type" });
+    const invite = await prisma.invite.create({
+      data: {
+        email: "resend.wrongtype@example.com",
+        invitedById: coach.id,
+        type: "COACH_TO_SCHOOL",
+        status: "PENDING",
+        token: crypto.randomBytes(24).toString("hex"),
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      },
+    });
+    const token = await loginAs("coach.resend.wrongtype");
+
+    const res = await request(app).post(`/api/invites/${invite.id}/resend`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});

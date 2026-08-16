@@ -9,6 +9,7 @@ import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { env } from "../lib/env.js";
 import { assignNewJoinCode } from "../lib/joinCode.js";
 import { GENDER_TO_SQUAD } from "../lib/gender.js";
+import { rotateInviteToken } from "../lib/inviteResend.js";
 
 export const schoolsRouter = Router();
 
@@ -180,6 +181,40 @@ schoolsRouter.post("/:id/invite-coach", async (req, res) => {
   }
 
   res.status(201).json({ invite, emailSent });
+});
+
+// Re-sends a PENDING coach invite for this school -- any member coach
+// can do this, not just whoever originally sent it (the same
+// requireMembership gate every other school-management route here
+// already uses; the "Pending coach invites" list itself is already
+// school-wide, not scoped to who sent each one, so managing them the
+// same way is consistent). Most useful for an expired one, but works
+// for a non-expired one too. Rotates onto a fresh token/expiry via
+// rotateInviteToken rather than resending the same old link.
+schoolsRouter.post("/:id/invites/:inviteId/resend", async (req, res) => {
+  if (!(await requireMembership(req))) return res.status(403).json({ error: "Forbidden" });
+  const invite = await prisma.invite.findUnique({ where: { id: req.params.inviteId } });
+  if (!invite || invite.schoolId !== req.params.id || invite.type !== "COACH_TO_SCHOOL") {
+    return res.status(404).json({ error: "Not found" });
+  }
+  if (invite.status !== "PENDING") {
+    return res.status(400).json({ error: "Only a pending invite can be resent" });
+  }
+
+  const school = await prisma.school.findUniqueOrThrow({ where: { id: req.params.id } });
+  const coach = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  const updated = await rotateInviteToken(invite.id);
+
+  let emailSent = false;
+  if (emailEnabled) {
+    const acceptUrl = `${env.frontendUrl}/accept-invite/${updated.token}`;
+    emailSent = await trySendEmail({
+      to: updated.email,
+      subject: `${coach.firstName} ${coach.lastName} invited you to join ${school.name} on Relay`,
+      html: `<p>${coach.firstName} ${coach.lastName} invited you to join <strong>${school.name}</strong> on Relay as a coach.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p><p>This link expires in 14 days.</p>`,
+    });
+  }
+  res.json({ invite: updated, emailSent });
 });
 
 // Replaces this school's join code -- e.g. if it's been shared somewhere
