@@ -12,11 +12,16 @@ export interface ReminderRunResult {
 /**
  * Finds every athlete who (a) has at least one Web Push subscription and
  * (b) hasn't submitted today's check-in yet, and sends each of their
- * subscribed devices a reminder. Meant to be run once a day by a cron
- * job (see index.ts) -- accepts `now` as a parameter (defaulting to the
- * real clock) purely so tests can drive it deterministically without
- * faking Date globally, the same convention resolveSubmissionDay (lib/
- * date.ts) already uses.
+ * subscribed devices a reminder. Meant to be run by a cron job (see
+ * index.ts) -- today that's twice a day (4pm and 7pm Central), and
+ * because the "hasn't checked in yet today" condition is the only thing
+ * that gates a send, calling this a second time in the same day is
+ * exactly correct on its own: anyone who checked in between the two
+ * runs simply won't match a second time, no separate "already reminded"
+ * state needed. Accepts `now` as a parameter (defaulting to the real
+ * clock) purely so tests can drive it deterministically without faking
+ * Date globally, the same convention resolveSubmissionDay (lib/date.ts)
+ * already uses.
  *
  * Coaches are never included -- this is specifically a "you haven't
  * checked in today" nudge, and only athletes submit check-ins. A coach

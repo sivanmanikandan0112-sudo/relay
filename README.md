@@ -436,20 +436,24 @@ runs exactly as it did before this feature until that's done (see
   `"unconfigured"`. `POST`/`DELETE /api/me/push-subscription` (both roles, no `requireRole` --
   subscribing itself isn't role-specific) save/remove one device's row, scoped to the caller's own
   account.
-- **The daily reminder** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
-  `sendCheckinReminders`, scheduled once a day at **4:00 PM America/Chicago (Central time)** by a
-  `node-cron` job in [`src/index.ts`](backend/src/index.ts) — `node-cron`'s `timezone` option, not a
-  hand-computed UTC hour, so it stays pinned to 4pm Central wall-clock time across daylight saving
-  changes. Scheduled in `index.ts`, not `app.ts`, which every test file imports via
-  supertest and deliberately has no side effects of its own — see its own top-of-file comment.
-  Finds every athlete with at least one subscription and no check-in yet today, sends each of their
-  devices a reminder, and deletes any subscription the push service reports as `"gone"`. Coaches are
-  never included -- the query only ever joins through `Athlete`, so a coach's own subscription (the
-  Profile toggle is athlete-only, but the endpoint itself doesn't enforce that) simply never
-  matches, no special-casing needed. No per-athlete timezone is tracked anywhere in this app, so
-  this is one fixed clock time for everyone regardless of where their team actually is -- the same
-  simplification `dayKey`/`resolveSubmissionDay` already make (see
-  [Backdating](#backdating-a-check-in-or-run) above).
+- **The daily reminders** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
+  `sendCheckinReminders`, scheduled **twice a day, at 4:00 PM and 7:00 PM America/Chicago (Central
+  time)**, by two separate `node-cron` jobs in [`src/index.ts`](backend/src/index.ts) — each using
+  `node-cron`'s `timezone` option, not a hand-computed UTC hour, so both stay pinned to 4pm/7pm
+  Central wall-clock time across daylight saving changes. Scheduled in `index.ts`, not `app.ts`,
+  which every test file imports via supertest and deliberately has no side effects of its own — see
+  its own top-of-file comment. Each run finds every athlete with at least one subscription and no
+  check-in yet *today*, sends each of their devices a reminder, and deletes any subscription the
+  push service reports as `"gone"`. Both slots call the exact same function with the exact same
+  "no check-in yet today" condition — there's no separate "already reminded once today" state to
+  track, so the 7pm run is automatically a no-op for anyone who checked in (whether in response to
+  the 4pm nudge or on their own) any time before it fires, and only nudges again someone still
+  missing today's check-in. Coaches are never included -- the query only ever joins through
+  `Athlete`, so a coach's own subscription (the Profile toggle is athlete-only, but the endpoint
+  itself doesn't enforce that) simply never matches, no special-casing needed. No per-athlete
+  timezone is tracked anywhere in this app, so these are two fixed clock times for everyone
+  regardless of where their team actually is -- the same simplification `dayKey`/
+  `resolveSubmissionDay` already make (see [Backdating](#backdating-a-check-in-or-run) above).
 - **Service worker** — the actual reason `injectManifest` (not the simpler `generateSW`) was picked
   for the whole [PWA setup](#progressive-web-app) in the first place: `push` and `notificationclick`
   handlers in [`src/sw.ts`](frontend/src/sw.ts) show the OS notification and deep-link to `/checkin`
@@ -909,7 +913,7 @@ build/start at its own workspace with `-w`:
 | `FRONTEND_URL` | No (if using Resend) | The frontend's public URL, used to build links inside real emails, e.g. `https://relaycoach.app` |
 | `MFA_ENCRYPTION_KEY` | **Yes, before anyone enables 2FA** | 64 hex characters (32 bytes) for AES-256-GCM — generate with `openssl rand -hex 32`. Unlike email, there's no simulate fallback: MFA setup fails with a clear error if this is missing rather than ever storing a TOTP secret insecurely. Use a different key per environment; never commit a real one. |
 | `GOOGLE_CLIENT_ID` | No | Enables `POST /api/auth/google` and `/api/me/google-link` to actually verify tokens. Unset, the routes still exist but any call fails loudly (`verifyGoogleIdToken` throws before doing anything) rather than silently accepting an unverified identity. See [Google sign-in setup](#google-sign-in-setup). |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | No | Enables [push notifications](#push-notifications). Unset, `POST /api/me/push-subscription` 503s and the daily reminder job no-ops (`skipped: true`) — see [Push notification setup](#push-notification-setup). Generate with `npx web-push generate-vapid-keys`. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | No | Enables [push notifications](#push-notifications). Unset, `POST /api/me/push-subscription` 503s and both daily reminder jobs no-op (`skipped: true`) — see [Push notification setup](#push-notification-setup). Generate with `npx web-push generate-vapid-keys`. |
 | `VAPID_SUBJECT` | No | A `mailto:` or `https:` URL push services may contact if this server misbehaves. Defaults to `mailto:admin@relaycoach.app`. Only meaningful once the two keys above are set. |
 
 **Frontend:**
@@ -936,8 +940,8 @@ with no partial/broken toggle. To turn it on:
    the private key), then redeploy the frontend — baked in at build time, so an env-var-only change
    on Railway still needs a rebuild, not just a restart.
 4. Once all three are set, the "Check-in reminders" toggle appears on Profile for athletes
-   automatically — no further code changes — and the daily reminder cron job in
-   [`index.ts`](backend/src/index.ts) starts actually sending instead of no-opping.
+   automatically — no further code changes — and both daily reminder cron jobs in
+   [`index.ts`](backend/src/index.ts) start actually sending instead of no-opping.
 
 ### Google sign-in setup
 
