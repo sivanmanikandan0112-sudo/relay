@@ -93,6 +93,11 @@ export const api = {
     request<ReadinessScore[]>(
       `/brief?week=${week}&year=${year}${squadId ? `&squadId=${squadId}` : ""}`
     ),
+  markTalkedTo: (readinessScoreId: string, talked: boolean) =>
+    request<{ id: string; talkedToAt: string | null }>(`/brief/${readinessScoreId}/talked-to`, {
+      method: "PATCH",
+      body: JSON.stringify({ talked }),
+    }),
   injuries: (squadId?: string) =>
     request<Injury[]>(`/injuries${squadId ? `?squadId=${squadId}` : ""}`),
   addNote: (athleteId: string, body: string) =>
@@ -301,6 +306,9 @@ export interface ReadinessScoreRecord {
   // (snapshotted then, not re-derived from today) -- null for scores
   // computed before this was tracked. See lib/status.ts's dataConfidence().
   daysOfHistory: number | null;
+  // Set once a coach marks "I've talked to them" for this week's flag on
+  // the Brief page (see components/MatchingSection.tsx) -- null until then.
+  talkedToAt: string | null;
 }
 
 export interface ReadinessScore extends ReadinessScoreRecord {

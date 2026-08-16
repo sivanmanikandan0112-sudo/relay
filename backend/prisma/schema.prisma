@@ -348,6 +348,15 @@ model ReadinessScore {
   // and lib/math.ts's MIN_HISTORY_DAYS/CHRONIC_WINDOW_DAYS (backend).
   daysOfHistory Int?
   createdAt   DateTime        @default(now())
+  // Set when a coach marks "I've talked to this athlete about this week's
+  // flag" from the Brief's "Fit them into your week" list -- null means not
+  // yet. Lives on the week's own score row (not a separate model) since
+  // it's inherently a per-athlete-per-week fact, same as score/status/
+  // summary above; the @@unique([athleteId, week, year]) below already
+  // guarantees exactly one row to hang it on. Cleared automatically next
+  // week simply because next week gets its own fresh row -- no reset job
+  // needed.
+  talkedToAt  DateTime?
 
   @@unique([athleteId, week, year])
   @@index([week, year])

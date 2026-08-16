@@ -1,129 +1,111 @@
 import { useMemo, useState } from "react";
-import type { ReadinessScore } from "../lib/api";
-import { deriveAvailability, solveMatching, TIMES, type Candidate, type Slot } from "../lib/matching";
+import { api, type ReadinessScore } from "../lib/api";
+import { STATUS_COLOR } from "../lib/status";
 
 interface MatchingSectionProps {
   scores: ReadinessScore[];
+  // Re-fetches the Brief's own `scores` from the server after a talked-to
+  // toggle -- same "let the server stay the single source of truth" pattern
+  // DetailDrawer's onRemoved already uses on this page, rather than
+  // reaching into local state here.
+  onRefresh: () => void;
 }
 
-const DEFAULT_SLOTS: Slot[] = [
-  { id: "sl1", time: "Tue lunch", type: "full" },
-  { id: "sl2", time: "Thu AM", type: "full" },
-  { id: "sl3", time: "Fri lunch", type: "quick" },
-];
+const MIN_COUNT = 1;
+const MAX_COUNT = 8;
+const DEFAULT_COUNT = 3;
 
-export function MatchingSection({ scores }: MatchingSectionProps) {
-  const [slotDefs, setSlotDefs] = useState<Slot[]>(DEFAULT_SLOTS);
-  const [matchPins, setMatchPins] = useState<Record<string, string>>({});
+// Previously a fake "who's free when" bipartite match against per-athlete
+// availability derived from a hash of their name -- looked plausible but
+// had no connection to actual risk, and a name could hash into zero
+// overlap with the offered time slots, silently bumping the athletes who
+// most needed a slot in favor of whoever's fake availability happened to
+// line up (see the git history for the exact bug report). Replaced with
+// what it always should have been: the N highest-priority runners this
+// week, full stop, with a per-athlete checkmark for "I've actually talked
+// to them" instead of a fabricated schedule.
+export function MatchingSection({ scores, onRefresh }: MatchingSectionProps) {
+  const [count, setCount] = useState(DEFAULT_COUNT);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  const candidates: Candidate[] = useMemo(
+  // Injured/return-protocol athletes are excluded, same as before -- their
+  // status is already known and expected, not something a check-in
+  // conversation resolves.
+  const ranked = useMemo(
     () =>
       scores
         .filter((s) => s.status !== "INJURED" && s.status !== "RETURN_PROTOCOL")
-        .map((s) => ({
-          id: s.athleteId,
-          name: s.athlete.name,
-          risk: 100 - s.score, // higher = needs a slot more, mirrors the source's risk scale
-          statusColor: "#33415c",
-          avail: deriveAvailability(s.athlete.name),
-        }))
-        .sort((a, b) => b.risk - a.risk),
+        .slice()
+        .sort((a, b) => a.score - b.score), // lowest score = needs it most, first
     [scores]
   );
 
-  const sol = useMemo(() => solveMatching(slotDefs, candidates, matchPins), [slotDefs, candidates, matchPins]);
-  const matchCustom = Object.keys(matchPins).length > 0;
+  const picks = ranked.slice(0, count);
 
-  function cycleSlotTime(id: string) {
-    setSlotDefs((defs) =>
-      defs.map((sl) => (sl.id === id ? { ...sl, time: TIMES[(TIMES.indexOf(sl.time as (typeof TIMES)[number]) + 1) % TIMES.length] } : sl))
-    );
+  async function toggleTalkedTo(s: ReadinessScore) {
+    setSavingId(s.id);
+    try {
+      await api.markTalkedTo(s.id, !s.talkedToAt);
+      onRefresh();
+    } finally {
+      setSavingId(null);
+    }
   }
 
-  function addSlot() {
-    if (slotDefs.length >= 6) return;
-    setSlotDefs((defs) => [...defs, { id: `sl${Date.now()}`, time: TIMES[defs.length % TIMES.length], type: "quick" }]);
-  }
-
-  function removeSlot(id: string) {
-    setSlotDefs((defs) => defs.filter((sl) => sl.id !== id));
-    setMatchPins((pins) => {
-      const next = { ...pins };
-      delete next[id];
-      return next;
-    });
-  }
+  if (ranked.length === 0) return null;
 
   return (
     <div className="match-section">
       <div className="match-head">
         <h2>Fit them into your week</h2>
         <div className="match-head-right">
-          <span className="match-or-badge">OR · bipartite match</span>
-          {matchCustom && (
-            <button className="match-reset" onClick={() => setMatchPins({})}>
-              reset
-            </button>
-          )}
+          <button
+            className="match-count-btn"
+            disabled={count <= MIN_COUNT}
+            onClick={() => setCount((c) => Math.max(MIN_COUNT, c - 1))}
+            aria-label="Fewer"
+          >
+            −
+          </button>
+          <span className="match-count-num">{count}</span>
+          <button
+            className="match-count-btn"
+            disabled={count >= MAX_COUNT || count >= ranked.length}
+            onClick={() => setCount((c) => Math.min(MAX_COUNT, c + 1))}
+            aria-label="More"
+          >
+            +
+          </button>
         </div>
       </div>
       <p className="match-desc">
-        The list above says <em>who</em>. This says <em>when</em>: Relay assigns your open 1:1 slots to
-        those runners by who's actually free then — a real slot-to-athlete match, not just the ranking.
-        Tap a time to change it.
+        Your {count} highest-priority runner{count === 1 ? "" : "s"} this week, ranked by who needs a
+        check-in most. Tap the checkmark once you've actually talked to them.
       </p>
       <div className="match-slots">
-        {sol.picks.map((p) => {
-          const pinned = !!matchPins[p.slot.id];
-          let reason: string;
-          if (!p.c) reason = `No athlete free at ${p.slot.time}`;
-          else if (pinned) reason = "Pinned by you";
-          else reason = `${p.w - p.c.risk > 0 ? "Best fit, " : ""}top risk free at ${p.slot.time}`;
-
+        {picks.map((s, i) => {
+          const done = !!s.talkedToAt;
           return (
-            <div className="match-slot" key={p.slot.id}>
-              <button className="match-time-btn" onClick={() => cycleSlotTime(p.slot.id)}>
-                {p.slot.time}
-              </button>
-              <span className="match-arrow">→</span>
-              {p.c ? (
-                <>
-                  <span className="match-cand-dot" style={{ background: candidateColor(p.c, scores) }} />
-                  <span className="match-cand-name">{p.c.name}</span>
-                </>
-              ) : (
-                <span className="match-none">no one free at this time</span>
-              )}
-              <span className="match-reason">{reason}</span>
-              <button className="match-remove" title="remove slot" onClick={() => removeSlot(p.slot.id)}>
-                ×
+            <div className={`match-slot${done ? " match-slot-done" : ""}`} key={s.id}>
+              <span className="match-rank">{i + 1}</span>
+              <span className="match-cand-dot" style={{ background: STATUS_COLOR[s.status] }} />
+              <span className="match-cand-name">{s.athlete.name}</span>
+              <span className="match-cand-score" style={{ color: STATUS_COLOR[s.status] }}>
+                {s.score}
+              </span>
+              <button
+                className={`match-check${done ? " match-check-done" : ""}`}
+                disabled={savingId === s.id}
+                onClick={() => toggleTalkedTo(s)}
+                title={done ? "Mark as not talked to yet" : "Mark as talked to"}
+              >
+                ✓
               </button>
             </div>
           );
         })}
-        {slotDefs.length < 6 && (
-          <button className="match-add-slot" onClick={addSlot}>
-            + add a 1:1 slot
-          </button>
-        )}
       </div>
-      <div className="match-footnote">Injured &amp; return-protocol runners are left out of the match automatically.</div>
+      <div className="match-footnote">Injured &amp; return-protocol runners are left out automatically.</div>
     </div>
   );
-}
-
-function candidateColor(c: Candidate, scores: ReadinessScore[]): string {
-  const match = scores.find((s) => s.athleteId === c.id);
-  return match ? statusColorFor(match) : "#33415c";
-}
-
-function statusColorFor(s: ReadinessScore): string {
-  const colors: Record<string, string> = {
-    FRESH: "#4ea373",
-    EASE_BACK: "#d9a53c",
-    BACK_OFF: "#cf5236",
-    RETURN_PROTOCOL: "#3d9c9c",
-    INJURED: "#7a8291",
-  };
-  return colors[s.status] ?? "#33415c";
 }

@@ -533,7 +533,8 @@ an incidental side effect of which button someone happened to click.
   `daysOfHistory` — how much history the athlete had on file *at the moment that score was
   computed* (not re-derived later from today's day-count) — purely so the UI can show a "still
   settling in" caveat on a new athlete's number without it silently reading as confident;
-  doesn't change the score itself. See [Data confidence](#data-confidence) below.
+  doesn't change the score itself. See [Data confidence](#data-confidence) below. Also holds
+  `talkedToAt` (nullable) — see ["Fit them into your week"](#fit-them-into-your-week) below.
 - **Injury** — tracked per athlete with status (`ACTIVE` / `RECOVERING` / `RESOLVED`)
 - **Note** — a coach's check-in note left on an athlete
 - **PushSubscription** — one row per device's Web Push subscription (endpoint + encryption keys),
@@ -587,6 +588,40 @@ number is fully trusted. This is a separate, score-level version of the same dis
 idea `getDataPhase`/`WorkloadAnalysis.tsx` already applied to the raw ACWR/risk numbers further
 down the same drawer — that one's still there too, unchanged; this one covers the headline number
 those numbers don't.
+
+### "Fit them into your week"
+
+Below the Brief's ranked list sits a second panel that turns the ranking into an actual to-do
+list: the coach's N highest-priority runners this week (a stepper controls N, 1–8, default 3;
+ephemeral component state, not persisted — cheap to change on a whim), each with a checkmark for
+"I've actually talked to them." [`components/MatchingSection.tsx`](frontend/src/components/MatchingSection.tsx)
+sorts every non-`INJURED`/non-`RETURN_PROTOCOL` athlete by score ascending (lowest = needs it
+most) and slices to N — the same exclusion the Brief's own ranked list already uses, since an
+injured or return-protocol athlete's status is already known and expected, not something a
+check-in resolves. If N exceeds the number of actually-flagged athletes, the extra spots simply
+fill in with the next-lowest-score (often `FRESH`) athletes — a coach who wants to check in with
+more people than are strictly flagged this week can just raise the count.
+
+The checkmark is real, persisted state — `ReadinessScore.talkedToAt` (nullable `DateTime`), set
+via `PATCH /api/brief/:id/talked-to` (`{talked: boolean}`, scoped to the coach's own roster,
+`talked: false` clears it back to `null`) — not a client-only toggle that vanishes on refresh.
+It lives directly on that week's `ReadinessScore` row rather than a separate model: the
+`@@unique([athleteId, week, year])` constraint already guarantees exactly one row per
+athlete-week to hang it on, and it naturally resets itself every Monday since next week's score
+is a brand-new row.
+
+This replaced an earlier version that assigned a fixed set of time slots (e.g. "Tue lunch") to
+athletes via a real weighted bipartite-match solver — the matching algorithm itself was correct,
+but *availability* was fake: `deriveAvailability(name)` derived a deterministic pseudo-schedule
+from a checksum of the athlete's own name, with zero connection to actual risk. That meant a
+high-risk athlete could hash into zero overlap with whichever slot times happened to be offered
+and simply never get matched to anything — the solver would then correctly (and silently) fill
+those slots with lower-risk athletes who *did* hash into availability instead, which looked like
+exactly the "ranks flagged athletes lowest" bug it was supposedly solving. Found via the real
+demo dataset: two flagged boys both happened to hash to "Wed PM" only, none of the three default
+slots, so all three slots filled with `FRESH` athletes instead. Dropping the fake availability
+model entirely — no slots, no schedule, just "these are your top N people" plus a real
+"did I talk to them" record — removes the whole class of bug rather than patching the hash.
 
 ### Athlete readiness visibility (self-service, off by default)
 
@@ -850,6 +885,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/athletes/:id/stats` | Always-visible session stats + phase-gated workload/ACWR numbers |
 | DELETE | `/api/athletes/:id/roster` | Remove an athlete from the active roster (coach only) — history/account untouched, see [above](#removing-an-athlete-from-the-roster) |
 | GET | `/api/brief?week=&year=&squadId=` | Weekly brief, ranked worst-first, roster-scoped |
+| PATCH | `/api/brief/:id/talked-to` | Mark/clear "talked to this athlete" on one week's readiness score (`{talked: boolean}`, coach must be on that athlete's roster) — see ["Fit them into your week"](#fit-them-into-your-week) |
 | GET | `/api/notes/athlete/:athleteId` | Notes for an athlete |
 | POST | `/api/notes` | Leave a note (coach, must be on the athlete's roster) |
 | GET | `/api/injuries?squadId=&status=` | List injuries, roster-scoped (coach only) |

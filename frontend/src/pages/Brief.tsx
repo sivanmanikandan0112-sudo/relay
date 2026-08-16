@@ -158,7 +158,7 @@ export function Brief() {
         the whole squad at a glance? See the <span style={{ color: "#8a97ad" }}>Dashboard</span>.
       </div>
 
-      {scores.length > 0 && <MatchingSection scores={scores} />}
+      {scores.length > 0 && <MatchingSection scores={scores} onRefresh={refresh} />}
 
       {detailFor && <DetailDrawer athleteId={detailFor} onClose={() => setDetailFor(null)} onRemoved={refresh} />}
       {noteFor && (

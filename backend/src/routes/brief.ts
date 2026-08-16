@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
-import { getCoachAthleteIds } from "../lib/authz.js";
+import { getCoachAthleteIds, isCoachOfAthlete } from "../lib/authz.js";
 
 export const briefRouter = Router();
 
@@ -54,4 +54,32 @@ briefRouter.get("/", async (req, res) => {
   }));
 
   res.json(withTrend);
+});
+
+const talkedToSchema = z.object({ talked: z.boolean() });
+
+// Marks (or clears) "I've talked to this athlete about this week's flag" on
+// one week's ReadinessScore row -- backs the checkmark in the Brief's "Fit
+// them into your week" list. `talked: false` clears it back to null rather
+// than deleting anything; there's nothing else on the row to clean up.
+briefRouter.patch("/:id/talked-to", async (req, res) => {
+  const parsed = talkedToSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const score = await prisma.readinessScore.findUnique({ where: { id: req.params.id }, select: { id: true, athleteId: true } });
+  if (!score) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  if (!(await isCoachOfAthlete(req.user!.sub, score.athleteId))) {
+    return res.status(404).json({ error: "Not found" });
+  }
+
+  const updated = await prisma.readinessScore.update({
+    where: { id: score.id },
+    data: { talkedToAt: parsed.data.talked ? new Date() : null },
+  });
+  res.json({ id: updated.id, talkedToAt: updated.talkedToAt });
 });
