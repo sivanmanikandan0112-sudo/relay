@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type DailyActivityPoint } from "../../lib/api";
+import { api, type AdminOverview, type DailyActivityPoint } from "../../lib/api";
 import { ContributionCalendar } from "../../components/ContributionCalendar";
 
 const DAYS = 90;
@@ -10,12 +10,14 @@ function CalendarPanel({
   data,
   label,
   colorVar,
+  extra,
 }: {
   title: string;
   subtitle: string;
   data: DailyActivityPoint[] | null;
   label: string;
   colorVar: string;
+  extra?: React.ReactNode;
 }) {
   const total = data?.reduce((sum, d) => sum + d.count, 0) ?? 0;
   const activeDays = data?.filter((d) => d.count > 0).length ?? 0;
@@ -33,6 +35,7 @@ function CalendarPanel({
           </div>
         )}
       </div>
+      {extra}
       <div style={{ marginTop: 14 }}>
         {data === null ? (
           <p className="page-subtitle" style={{ margin: 0 }}>
@@ -56,11 +59,13 @@ export function AdminActivity() {
   const [checkins, setCheckins] = useState<DailyActivityPoint[] | null>(null);
   const [runs, setRuns] = useState<DailyActivityPoint[] | null>(null);
   const [coachLogins, setCoachLogins] = useState<DailyActivityPoint[] | null>(null);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
 
   useEffect(() => {
     api.adminCheckinActivity(DAYS).then(setCheckins);
     api.adminRunActivity(DAYS).then(setRuns);
     api.adminCoachLoginActivity(DAYS).then(setCoachLogins);
+    api.adminOverview().then(setOverview);
   }, []);
 
   return (
@@ -78,6 +83,19 @@ export function AdminActivity() {
         data={checkins}
         label="check-in"
         colorVar="#4ea373"
+        extra={
+          overview && (
+            <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "8px 0 0", fontFamily: "var(--font-mono)" }}>
+              TODAY:{" "}
+              <strong style={{ color: "var(--text-light)" }}>
+                {overview.checkinRate === null ? "—" : `${Math.round(overview.checkinRate * 100)}%`}
+              </strong>{" "}
+              {overview.activeAthleteCount > 0
+                ? `(${overview.checkedInToday} of ${overview.activeAthleteCount} rostered athletes)`
+                : "(no rostered athletes yet)"}
+            </p>
+          )
+        }
       />
       <CalendarPanel
         title="Athlete runs"

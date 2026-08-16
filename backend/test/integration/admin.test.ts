@@ -58,6 +58,84 @@ describe("GET /api/admin/overview", () => {
   });
 });
 
+describe("GET /api/admin/overview -- today's check-in rate", () => {
+  it("null (not 0 or NaN) when there are no rostered athletes yet", async () => {
+    await createCoach({ username: "coach.rate.empty", firstName: "Rate", lastName: "Empty" });
+    await makeSuperAdmin("coach.rate.empty");
+    const token = await loginAs("coach.rate.empty");
+
+    const res = await request(app).get("/api/admin/overview").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.activeAthleteCount).toBe(0);
+    expect(res.body.checkedInToday).toBe(0);
+    expect(res.body.checkinRate).toBeNull();
+  });
+
+  it("computes checkedInToday / activeAthleteCount for a realistic mixed day", async () => {
+    await createCoach({ username: "coach.rate.mixed", firstName: "Rate", lastName: "Mixed" });
+    await makeSuperAdmin("coach.rate.mixed");
+    const coach = await createCoach({ username: "coach.rate.mixed2", firstName: "Roster", lastName: "Owner" });
+
+    const { athlete: a1 } = await createAthlete({ username: "ath.rate.a1", firstName: "A1", lastName: "Rate", squad: "GIRLS" });
+    const { athlete: a2 } = await createAthlete({ username: "ath.rate.a2", firstName: "A2", lastName: "Rate", squad: "GIRLS" });
+    const { athlete: a3 } = await createAthlete({ username: "ath.rate.a3", firstName: "A3", lastName: "Rate", squad: "BOYS" });
+    const { athlete: a4 } = await createAthlete({ username: "ath.rate.a4", firstName: "A4", lastName: "Rate", squad: "BOYS" });
+    for (const a of [a1, a2, a3, a4]) await assignRoster(coach.id, a.id);
+
+    // Only 2 of the 4 rostered athletes check in today.
+    await prisma.wellnessEntry.create({
+      data: { athleteId: a1.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+    await prisma.wellnessEntry.create({
+      data: { athleteId: a2.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+    // a3 checked in YESTERDAY, not today -- shouldn't count.
+    await prisma.wellnessEntry.create({
+      data: { athleteId: a3.id, day: dayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+
+    const token = await loginAs("coach.rate.mixed");
+    const res = await request(app).get("/api/admin/overview").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.activeAthleteCount).toBe(4);
+    expect(res.body.checkedInToday).toBe(2);
+    expect(res.body.checkinRate).toBeCloseTo(0.5);
+  });
+
+  it("an athlete removed from every roster drops out of the denominator, even though their account and history remain", async () => {
+    await createCoach({ username: "coach.rate.removed", firstName: "Rate", lastName: "Removed" });
+    await makeSuperAdmin("coach.rate.removed");
+    const coach = await createCoach({ username: "coach.rate.removed2", firstName: "Roster", lastName: "Owner2" });
+
+    const { athlete: staying } = await createAthlete({ username: "ath.rate.staying", firstName: "Staying", lastName: "Rate", squad: "GIRLS" });
+    const { athlete: leaving } = await createAthlete({ username: "ath.rate.leaving", firstName: "Leaving", lastName: "Rate", squad: "GIRLS" });
+    await assignRoster(coach.id, staying.id);
+    await assignRoster(coach.id, leaving.id);
+
+    // Both check in today...
+    await prisma.wellnessEntry.create({
+      data: { athleteId: staying.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+    await prisma.wellnessEntry.create({
+      data: { athleteId: leaving.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+
+    const token = await loginAs("coach.rate.removed");
+    const before = await request(app).get("/api/admin/overview").set("Authorization", `Bearer ${token}`);
+    expect(before.body.activeAthleteCount).toBe(2);
+    expect(before.body.checkinRate).toBeCloseTo(1);
+
+    // ...then one of them is removed from the roster (their history stays put).
+    await prisma.coachAthlete.deleteMany({ where: { athleteId: leaving.id } });
+
+    const after = await request(app).get("/api/admin/overview").set("Authorization", `Bearer ${token}`);
+    expect(after.body.activeAthleteCount).toBe(1); // leaving no longer counted
+    expect(after.body.checkedInToday).toBe(1); // their earlier check-in today is no longer counted either
+    expect(after.body.checkinRate).toBeCloseTo(1); // still 100% -- staying alone, still checked in
+    expect(await prisma.wellnessEntry.findFirst({ where: { athleteId: leaving.id } })).not.toBeNull(); // history untouched
+  });
+});
+
 describe("GET /api/admin/coaches/:id", () => {
   it("includes the coach's school and their visible (school-shared) athletes", async () => {
     await createCoach({ username: "coach.admin2", firstName: "Admin", lastName: "Two" });

@@ -291,6 +291,17 @@ missing one. Color intensity is relative to the busiest day *in that window*, sa
 scaling — there's no single fixed scale that would mean the same thing across three very different
 metrics.
 
+**Today's check-in rate** — a snapshot stat (`GET /api/admin/overview`, shown as a tile on
+**Overview** and again as a summary line above the check-ins calendar on **Activity**): what
+fraction of currently-rostered athletes have submitted *today's* check-in, right now. The
+denominator is deliberately `activeAthleteCount` — distinct athletes with at least one
+`CoachAthlete` row — not the raw `athleteCount` shown next to it, and `checkedInToday` is scoped
+to that same active set. That distinction only exists because of [Removing an athlete from the
+roster](#removing-an-athlete-from-the-roster): an athlete who's graduated or quit keeps their
+account and full check-in history (by design), and none of that history should either inflate or
+appear in "today's" rate once they're off every coach's roster. `checkinRate` is `null`, not `0`,
+when there are no rostered athletes yet — "nobody's rostered" isn't the same claim as "a bad day."
+
 ### Two-factor authentication (TOTP)
 
 Optional, self-service, both roles — enabled from **My Profile** (`/profile`). Scan the QR code

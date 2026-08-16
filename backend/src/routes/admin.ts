@@ -19,13 +19,51 @@ export const adminRouter = Router();
 adminRouter.use(requireAuth, requireSuperAdmin);
 
 adminRouter.get("/overview", async (_req, res) => {
-  const [schoolCount, coachCount, athleteCount, soloCoachCount] = await Promise.all([
+  const today = dayKey(new Date());
+  const [schoolCount, coachCount, athleteCount, soloCoachCount, activeAthleteRows] = await Promise.all([
     prisma.school.count(),
     prisma.user.count({ where: { role: "COACH" } }),
     prisma.athlete.count(),
     prisma.user.count({ where: { role: "COACH", schoolId: null } }),
+    // "Active" here means currently on *some* coach's roster -- distinct
+    // athleteId across CoachAthlete, not the raw athleteCount above.
+    // Matters specifically because of "Remove from roster" (see
+    // routes/athletes.ts): an athlete who's graduated/quit still has an
+    // Athlete row (their history is deliberately preserved), but their
+    // never-happening check-ins shouldn't drag the whole team's rate
+    // down just because the account still exists.
+    prisma.coachAthlete.findMany({ distinct: ["athleteId"], select: { athleteId: true } }),
   ]);
-  res.json({ schoolCount, coachCount, athleteCount, soloCoachCount });
+  const activeAthleteIds = activeAthleteRows.map((r) => r.athleteId);
+  const activeAthleteCount = activeAthleteIds.length;
+
+  // Scoped to the same activeAthleteIds set as the denominator above --
+  // not every WellnessEntry system-wide -- so a removed athlete's old
+  // check-in history (still real, still in the database) can never
+  // inflate today's rate past what the *current* roster actually did.
+  // WellnessEntry.day is already the UTC calendar-day key every check-in
+  // is stored under (see lib/date.ts's dayKey), the same convention the
+  // /activity/checkins calendar below already uses.
+  const checkedInToday = await prisma.wellnessEntry.findMany({
+    where: { day: today, athleteId: { in: activeAthleteIds } },
+    distinct: ["athleteId"],
+    select: { athleteId: true },
+  });
+
+  // Rate only makes sense once someone's actually rostered -- a brand
+  // new, roster-less deployment shouldn't show "0% checked in today" as
+  // if that were a bad sign.
+  const checkinRate = activeAthleteCount > 0 ? checkedInToday.length / activeAthleteCount : null;
+
+  res.json({
+    schoolCount,
+    coachCount,
+    athleteCount,
+    soloCoachCount,
+    activeAthleteCount,
+    checkedInToday: checkedInToday.length,
+    checkinRate,
+  });
 });
 
 adminRouter.get("/coaches", async (_req, res) => {

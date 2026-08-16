@@ -444,6 +444,14 @@ export interface AdminOverview {
   coachCount: number;
   athleteCount: number;
   soloCoachCount: number;
+  // Today's check-in rate -- activeAthleteCount is athletes currently on
+  // *some* coach's roster (not the same as athleteCount, which includes
+  // anyone ever removed from a roster too -- see routes/admin.ts).
+  // checkinRate is null, not 0, when activeAthleteCount is 0 -- "no
+  // roster yet" isn't the same thing as "a bad day".
+  activeAthleteCount: number;
+  checkedInToday: number;
+  checkinRate: number | null;
 }
 
 // One point per calendar day, zero-filled -- see routes/admin.ts's
