@@ -205,11 +205,10 @@ export function Profile() {
       <div className="panel" style={{ marginTop: 0 }}>
         <h2>Change password</h2>
         <form onSubmit={handleChangePassword}>
-          <label>
-            Current password
+          <label className="pw-field">
+            <span className="pw-field-label">Current password</span>
             <input
               className="ath-input"
-              style={{ marginTop: 4, marginBottom: 12 }}
               type="password"
               autoComplete="current-password"
               value={currentPassword}
@@ -217,11 +216,10 @@ export function Profile() {
               required
             />
           </label>
-          <label>
-            New password
+          <label className="pw-field">
+            <span className="pw-field-label">New password</span>
             <input
               className="ath-input"
-              style={{ marginTop: 4, marginBottom: 12 }}
               type="password"
               autoComplete="new-password"
               value={newPassword}
@@ -229,11 +227,10 @@ export function Profile() {
               required
             />
           </label>
-          <label>
-            Confirm new password
+          <label className="pw-field">
+            <span className="pw-field-label">Confirm new password</span>
             <input
               className="ath-input"
-              style={{ marginTop: 4, marginBottom: 12 }}
               type="password"
               autoComplete="new-password"
               value={confirm}
