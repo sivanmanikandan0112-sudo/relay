@@ -85,6 +85,23 @@ export function HowItWorksContent() {
         </p>
       </div>
       <div className="callout" style={{ background: "#0c1017", border: "1px solid #1e2839" }}>
+        <h3>Install Relay as an app</h3>
+        <p>
+          Add Relay to your phone or tablet's home screen and it opens full-screen, no browser
+          bar, exactly like any other app — quicker to reach between reps or on your way out of
+          practice.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          <strong>iPhone/iPad:</strong> open relaycoach.app in Safari, tap the Share icon, then{" "}
+          <strong>Add to Home Screen</strong>.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          <strong>Android:</strong> open it in Chrome, tap the ⋮ menu, then{" "}
+          <strong>Install app</strong> (or <strong>Add to Home Screen</strong>) — Chrome sometimes
+          offers this on its own too.
+        </p>
+      </div>
+      <div className="callout" style={{ background: "#0c1017", border: "1px solid #1e2839" }}>
         <h3>What Relay is — and isn't</h3>
         <p>
           It isn't another training log or planner. It's the layer on top that answers one question

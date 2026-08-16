@@ -401,6 +401,19 @@ file — `generateSW` only lets you configure caching rules, not add arbitrary e
   `npm run build -w frontend` to test installability/offline/update behavior locally, not the
   regular dev server. That config's `vite preview` doesn't inherit `server.proxy` the way `vite dev`
   does, so `vite.config.ts` also has its own `preview.proxy` copy of the same `/api` rule.
+- **In-app install instructions** — both How It Works pages spell out the actual steps
+  (iPhone/iPad: Safari's Share icon → **Add to Home Screen**; Android: Chrome's ⋮ menu →
+  **Install app**), not just "it's installable." The athlete page
+  ([`AthleteHowItWorks.tsx`](frontend/src/pages/AthleteHowItWorks.tsx)) frames it around push
+  reminders specifically, since **iOS only delivers Web Push to an installed, standalone-launched
+  icon — a plain Safari tab can silently hold a "successful" subscription that never actually
+  shows a notification** (discovered firsthand: a subscription created before an icon
+  reinstall keeps accepting pushes from the server with no error, it just never displays). The
+  callout also tells an athlete how to recover from exactly that — flip reminders off and back on
+  in **Profile** after reinstalling the icon, which re-subscribes against the current install. The
+  coach page ([`HowItWorksContent.tsx`](frontend/src/components/HowItWorksContent.tsx)) covers the
+  same install steps without the reminder framing, since coaches never get push notifications
+  themselves (`Profile.tsx`'s push section is gated to `role === "ATHLETE"` only).
 
 ### Push notifications
 

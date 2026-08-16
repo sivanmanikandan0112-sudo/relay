@@ -34,8 +34,8 @@ const STEPS = [
       <>
         Flip on check-in reminders from your <strong>Profile</strong> and Relay will nudge you on
         this device if a day's check-in goes missing — never a repeat once you've already logged
-        it. You can also add Relay to your home screen like a real app; it works even with no
-        signal.
+        it. Add Relay to your home screen first (see below) — on iPhone, that's the only way the
+        reminder can actually show up.
       </>
     ),
   },
@@ -75,6 +75,28 @@ export function AthleteHowItWorks() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="callout" style={{ background: "#1c1409", border: "1px solid #4a3620" }}>
+        <h3 style={{ color: "var(--orange)", fontSize: 13 }}>GET IT ON YOUR HOME SCREEN</h3>
+        <p style={{ color: "#9fabbf" }}>
+          Add Relay to your home screen and it opens full-screen like a real app, works even with
+          no signal, and — on iPhone especially — it's the only way check-in reminders can
+          actually show up. A plain browser tab can't display them.
+        </p>
+        <p style={{ color: "#9fabbf", marginTop: 8 }}>
+          <span style={{ color: "#e8a878" }}>iPhone/iPad:</span> open relaycoach.app in Safari, tap
+          the Share icon, then <span style={{ color: "#e8a878" }}>Add to Home Screen</span>.
+        </p>
+        <p style={{ color: "#9fabbf", marginTop: 8 }}>
+          <span style={{ color: "#e8a878" }}>Android:</span> open it in Chrome, tap the ⋮ menu,
+          then <span style={{ color: "#e8a878" }}>Install app</span> (or{" "}
+          <span style={{ color: "#e8a878" }}>Add to Home Screen</span>).
+        </p>
+        <p style={{ color: "#9fabbf", marginTop: 8 }}>
+          Reminders stop showing up after you remove and re-add the icon? That breaks the old
+          subscription — just flip reminders off and back on in your Profile to fix it.
+        </p>
       </div>
 
       <div className="callout" style={{ background: "#0e1c14", border: "1px solid #234a30" }}>
