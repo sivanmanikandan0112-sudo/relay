@@ -1,7 +1,9 @@
 import { Router } from "express";
+import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { getCoachAthleteIds } from "../lib/authz.js";
+import { checkinRateSeries } from "../lib/activityStats.js";
 
 export const squadsRouter = Router();
 
@@ -25,4 +27,27 @@ squadsRouter.get("/:id/athletes", async (req, res) => {
     orderBy: { name: "asc" },
   });
   res.json(athletes);
+});
+
+const checkinRateQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(60).default(7) });
+
+// A coach-scoped, squad-scoped version of the admin overview's own
+// checkinRate/activity endpoints -- "at a glance, how many of my kids
+// are actually checking in" for this specific squad, not the whole
+// system. See lib/activityStats.ts for why `total` is the *current*
+// squad roster size held constant across the whole series.
+squadsRouter.get("/:id/checkin-rate", async (req, res) => {
+  const parsed = checkinRateQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const rosterIds = await getCoachAthleteIds(req.user!.sub);
+  const squadAthletes = await prisma.athlete.findMany({
+    where: { squadId: req.params.id, id: { in: rosterIds } },
+    select: { id: true },
+  });
+  const series = await checkinRateSeries(
+    squadAthletes.map((a) => a.id),
+    parsed.data.days
+  );
+  res.json(series);
 });

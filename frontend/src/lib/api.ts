@@ -86,6 +86,7 @@ export const api = {
 
   squads: () => request<Squad[]>("/squads"),
   athletesInSquad: (squadId: string) => request<Athlete[]>(`/squads/${squadId}/athletes`),
+  squadCheckinRate: (squadId: string, days = 7) => request<CheckinRatePoint[]>(`/squads/${squadId}/checkin-rate?days=${days}`),
   athleteDetail: (athleteId: string) => request<AthleteDetail>(`/athletes/${athleteId}`),
   removeFromRoster: (athleteId: string) => request<{ removed: boolean }>(`/athletes/${athleteId}/roster`, { method: "DELETE" }),
   wellnessForAthlete: (athleteId: string) => request<WellnessEntry[]>(`/wellness/athlete/${athleteId}`),
@@ -176,7 +177,7 @@ export const api = {
   adminCoaches: () => request<AdminCoachSummary[]>("/admin/coaches"),
   adminCoachDetail: (id: string) => request<AdminCoachDetail>(`/admin/coaches/${id}`),
   adminSchools: () => request<AdminSchoolSummary[]>("/admin/schools"),
-  adminSchoolDetail: (id: string) => request<SchoolDetail>(`/admin/schools/${id}`),
+  adminSchoolDetail: (id: string) => request<AdminSchoolDetail>(`/admin/schools/${id}`),
   adminUsers: (q?: string) => request<AdminUserSummary[]>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   adminUserDetail: (id: string) => request<AdminUserDetail>(`/admin/users/${id}`),
   adminResetUserPassword: (id: string) =>
@@ -435,6 +436,29 @@ export interface SchoolDetail extends School {
   invites: Invite[];
   joinCode: string;
   pendingRequestCount: number;
+}
+
+export interface CheckinRatePoint {
+  date: string;
+  checkedIn: number;
+  total: number;
+  rate: number | null;
+}
+
+export interface AdminSchoolAthlete {
+  id: string;
+  name: string;
+  squadName: "GIRLS" | "BOYS";
+  gender: Gender | null;
+}
+
+// GET /api/admin/schools/:id -- same shape the school's own coaches see
+// (SchoolDetail), plus the actual athlete roster and a check-in-rate
+// series that only an admin gets (a coach already sees their athletes
+// via Brief/Dashboard, so School.tsx deliberately stays at just a count).
+export interface AdminSchoolDetail extends SchoolDetail {
+  athletes: AdminSchoolAthlete[];
+  checkinRateSeries: CheckinRatePoint[];
 }
 
 export interface SchoolJoinRequestSummary {

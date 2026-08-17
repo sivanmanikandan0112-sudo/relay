@@ -702,6 +702,39 @@ This backend side (`routes/injuries.ts`) already existed and was already fully t
 was purely that no frontend UI ever called `POST`/`PATCH /api/injuries`, so there was genuinely no
 way to log one before this.
 
+### Check-in rate — coach and admin, roster/school-scoped
+
+A small stat, not a calendar: "X% checked in today" plus a 7-day bar graph, backed by
+[`lib/activityStats.ts`](backend/src/lib/activityStats.ts)'s `checkinRateSeries` — a zero-filled
+daily `{date, checkedIn, total, rate}` series, same shape as `routes/admin.ts`'s existing
+system-wide activity endpoints, just parameterized on whatever athlete-ID list the caller passes
+in instead of always being every athlete everywhere. `total` is the *current* roster size held
+constant across the whole series (this app doesn't track roster membership historically), and
+`rate` is `null` rather than `0` when `total` is 0 — an empty roster isn't a bad check-in day.
+
+- **Coach-facing** — `GET /api/squads/:id/checkin-rate?days=` (default 7, coach + squad scoped via
+  `getCoachAthleteIds`), shown on the Board (Dashboard.tsx) right under the status summary row.
+- **Admin-facing** — folded into `GET /api/admin/schools/:id`'s existing response as
+  `checkinRateSeries` (always 7 days), scoped to that school's whole shared roster via
+  `getSchoolAthleteIds`. Shown on `AdminSchoolDetail.tsx`.
+
+### Admins can now see a school's actual athlete roster, not just a count
+
+`GET /api/admin/schools/:id` also now returns an `athletes` array (name, squad, gender) — the
+same shape `adminCoachDetail`'s own `athletes` list already uses. Coach-facing `School.tsx`
+deliberately still only shows an athlete *count*, not names, since a coach already sees every one
+of them individually via Brief/Dashboard; an admin has no equivalent squad view to fall back on,
+so this was a real gap, not a deliberate omission being reversed.
+
+### An accepted coach invite no longer also lingers in "Pending coach invites"
+
+Both `School.tsx` (coach-facing) and `AdminSchoolDetail.tsx` (admin-facing) used to keep showing
+an `ACCEPTED` `COACH_TO_SCHOOL` invite in the "Pending coach invites" list with a "Joined" pill —
+purely redundant, since that coach is already listed in the **Coaches** panel directly above the
+moment they accept. Both pages now filter `ACCEPTED` out of that list client-side (the API still
+returns every invite regardless of status, in case anything else ever needs the full history) —
+`REJECTED` invites still show, since that's real history with nowhere else to see it.
+
 ### Removing an athlete from the roster
 
 A **Remove from roster** button at the bottom of the same detail drawer (behind an inline confirm

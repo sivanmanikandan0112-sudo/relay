@@ -7,6 +7,7 @@ import { getSchoolDetail } from "../lib/schoolDetail.js";
 import { issueResetToken } from "../lib/passwordReset.js";
 import { emailEnabled, trySendEmail } from "../lib/email.js";
 import { dayKey, groupByDay } from "../lib/date.js";
+import { checkinRateSeries } from "../lib/activityStats.js";
 
 // System-wide, read-only view across every school/coach/athlete --
 // gated on isSuperAdmin (folded into the JWT, see lib/auth.ts), not any
@@ -130,7 +131,28 @@ adminRouter.get("/schools", async (_req, res) => {
 adminRouter.get("/schools/:id", async (req, res) => {
   const detail = await getSchoolDetail(req.params.id);
   if (!detail) return res.status(404).json({ error: "Not found" });
-  res.json(detail);
+
+  // Extra, admin-only fields on top of the same SchoolDetail shape the
+  // school's own coaches see (getSchoolDetail is shared with
+  // routes/schools.ts) -- the actual athlete roster by name/squad
+  // (coach-facing School.tsx deliberately only shows a count, since a
+  // coach already sees every athlete via Brief/Dashboard; an admin has
+  // no equivalent squad view to fall back on) and a 7-day check-in-rate
+  // series scoped to this specific school, same shape as the system-wide
+  // activity endpoints below.
+  const athleteIds = await getSchoolAthleteIds(req.params.id);
+  const athletes = await prisma.athlete.findMany({
+    where: { id: { in: athleteIds } },
+    include: { squad: true },
+    orderBy: { name: "asc" },
+  });
+  const checkinRateSeries7d = await checkinRateSeries(athleteIds, 7);
+
+  res.json({
+    ...detail,
+    athletes: athletes.map((a) => ({ id: a.id, name: a.name, squadName: a.squad.name, gender: a.gender })),
+    checkinRateSeries: checkinRateSeries7d,
+  });
 });
 
 // Every account in the system, coach or athlete -- one User table, so

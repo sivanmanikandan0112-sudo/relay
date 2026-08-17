@@ -173,6 +173,48 @@ describe("GET /api/admin/schools/:id", () => {
     expect(res.body.athleteCount).toBe((await getSchoolAthleteIds(school.id)).length);
     expect(res.body.coaches).toHaveLength(1);
   });
+
+  it("includes the actual athlete roster by name/squad, and a 7-day checkinRateSeries scoped to this school", async () => {
+    await createCoach({ username: "coach.admin4", firstName: "Admin", lastName: "Four" });
+    await makeSuperAdmin("coach.admin4");
+    const school = await ensureSchool("School Athletes High");
+    const coach = await createCoach({ username: "coach.schoolathletes", firstName: "School", lastName: "Athletes" });
+    await assignSchool(coach.id, school.id);
+    const { athlete } = await createAthlete({ username: "ath.schoolathletes", firstName: "Roster", lastName: "Kid", squad: "BOYS" });
+    await assignRoster(coach.id, athlete.id);
+    await prisma.wellnessEntry.create({
+      data: { athleteId: athlete.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+
+    const token = await loginAs("coach.admin4");
+    const res = await request(app).get(`/api/admin/schools/${school.id}`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.athletes).toEqual([{ id: athlete.id, name: "Roster Kid", squadName: "BOYS", gender: null }]);
+
+    expect(res.body.checkinRateSeries).toHaveLength(7);
+    const today = res.body.checkinRateSeries[6];
+    expect(today.total).toBe(1);
+    expect(today.checkedIn).toBe(1);
+    expect(today.rate).toBe(1);
+    const yesterday = res.body.checkinRateSeries[5];
+    expect(yesterday.checkedIn).toBe(0);
+    expect(yesterday.rate).toBe(0);
+  });
+
+  it("a school with no athletes yet gets a checkinRateSeries of nulls, not zeros", async () => {
+    await createCoach({ username: "coach.admin5", firstName: "Admin", lastName: "Five" });
+    await makeSuperAdmin("coach.admin5");
+    const school = await ensureSchool("School No Athletes High");
+
+    const token = await loginAs("coach.admin5");
+    const res = await request(app).get(`/api/admin/schools/${school.id}`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.athletes).toEqual([]);
+    for (const point of res.body.checkinRateSeries) {
+      expect(point.total).toBe(0);
+      expect(point.rate).toBeNull();
+    }
+  });
 });
 
 describe("login records a LoginEvent, deduped per day", () => {

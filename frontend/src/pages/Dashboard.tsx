@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { api, type ReadinessScore, type Squad } from "../lib/api";
+import { api, type CheckinRatePoint, type ReadinessScore, type Squad } from "../lib/api";
 import { STATUS_LABEL, STATUS_COLOR, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { initials } from "../lib/format";
 import { DetailDrawer } from "../components/DetailDrawer";
 import { NoteModal } from "../components/NoteModal";
+import { BarChart } from "../components/BarChart";
 
 const SQUAD_LABEL: Record<Squad["name"], string> = { GIRLS: "Girls", BOYS: "Boys" };
 
@@ -38,11 +39,13 @@ export function Dashboard() {
   const [squadName, setSquadName] = useState("");
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{ id: string; name: string } | null>(null);
+  const [checkinSeries, setCheckinSeries] = useState<CheckinRatePoint[]>([]);
 
   function refresh() {
     if (!squadId) return;
     const now = new Date();
     api.brief(currentIsoWeek(now), now.getFullYear(), squadId).then(setScores).catch(() => {});
+    api.squadCheckinRate(squadId).then(setCheckinSeries).catch(() => {});
   }
 
   useEffect(() => {
@@ -54,6 +57,8 @@ export function Dashboard() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [squadId]);
+
+  const todayRate = checkinSeries[checkinSeries.length - 1];
 
   return (
     <section>
@@ -88,6 +93,18 @@ export function Dashboard() {
           </div>
         ))}
       </div>
+
+      {checkinSeries.length > 0 && (
+        <div className="board-checkin-rate">
+          <div>
+            <div className="board-checkin-rate-num">{todayRate?.rate != null ? `${Math.round(todayRate.rate * 100)}%` : "—"}</div>
+            <div className="board-checkin-rate-label">
+              {todayRate ? `${todayRate.checkedIn} / ${todayRate.total} checked in today` : "no roster yet"}
+            </div>
+          </div>
+          <BarChart values={checkinSeries.map((p) => (p.rate ?? 0) * 100)} colorVar="var(--orange)" width={180} height={44} />
+        </div>
+      )}
 
       <div className="lanes">
         {scores.map((s) => {

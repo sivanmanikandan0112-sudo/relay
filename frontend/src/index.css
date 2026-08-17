@@ -237,6 +237,12 @@ h1.page-title {
 .board-summary-item .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .board-summary-item .n { font-family: var(--font-display); font-weight: 700; font-size: 18px; line-height: 1; }
 .board-summary-item .l { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); letter-spacing: .3px; }
+.board-checkin-rate {
+  display: flex; align-items: center; gap: 18px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.board-checkin-rate-num { font-family: var(--font-display); font-weight: 700; font-size: 26px; color: var(--orange); line-height: 1; }
+.board-checkin-rate-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); margin-top: 3px; }
 
 .lanes { display: flex; flex-direction: column; gap: 9px; }
 .lane { display: flex; align-items: stretch; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: border-color .15s; }

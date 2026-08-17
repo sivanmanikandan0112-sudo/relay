@@ -234,6 +234,12 @@ export function School() {
     );
   }
 
+  // Accepted invites are already reflected in the Coaches list above --
+  // showing them here too as "Joined" was pure redundancy. Rejected ones
+  // stay visible; that's real history a still-pending invite doesn't have
+  // anywhere else.
+  const pendingInvites = school.invites.filter((inv) => inv.status !== "ACCEPTED");
+
   return (
     <section>
       <p className="eyebrow-mono">SCHOOL</p>
@@ -414,7 +420,7 @@ export function School() {
         </p>
       </div>
 
-      {school.invites.length > 0 && (
+      {pendingInvites.length > 0 && (
         <div className="panel">
           <h2>Pending coach invites</h2>
           {resendError && (
@@ -423,13 +429,13 @@ export function School() {
             </p>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {school.invites.map((inv) => {
+            {pendingInvites.map((inv) => {
               const expired = new Date(inv.expiresAt) < new Date();
               return (
                 <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
                   <div className="run-row">
                     <span className="run-type">{inv.email}</span>
-                    <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : inv.status === "ACCEPTED" ? "Joined" : "Rejected"}</span>
+                    <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : "Rejected"}</span>
                   </div>
                   {inv.status === "PENDING" && (
                     <div className="run-row" style={{ marginTop: 8 }}>
