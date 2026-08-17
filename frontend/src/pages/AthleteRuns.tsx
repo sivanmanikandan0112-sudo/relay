@@ -57,12 +57,16 @@ export function AthleteRuns() {
     if (!canAdd || rpe == null) return;
     setSaving(true);
     try {
+      // Always pass `day` explicitly, even for "today" -- see the matching
+      // comment in AthleteCheckin.tsx's handleSubmit for why omitting it
+      // (and letting the backend fall back to its own UTC "now") is the
+      // actual bug this fixes.
       await api.logRun({
         runType: title.trim(),
         distanceMiles: roundDistance(distance),
         durationMin,
         rpe,
-        day: selectedDay === todayKey() ? undefined : selectedDay,
+        day: selectedDay,
       });
       setTitle("");
       setDistance("");

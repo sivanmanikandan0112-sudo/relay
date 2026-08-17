@@ -28,9 +28,27 @@ export function formatShortDate(iso: string): string {
 // check-in or run for, today included.
 export const BACKDATE_WINDOW_DAYS = 7;
 
-/** Today's date as a "YYYY-MM-DD" string, in UTC -- matches how the backend keys days. */
+/**
+ * "YYYY-MM-DD" for a Date in the *browser's own local timezone* --
+ * deliberately NOT `now.toISOString().slice(0, 10)`, which is always UTC.
+ * That used to be this function's whole implementation, and it's a real
+ * bug for anyone west of UTC (i.e. every US timezone): from local evening
+ * until UTC midnight, UTC's calendar day has already rolled over to
+ * "tomorrow" while the athlete is still very much living in "today". An
+ * evening check-in submitted with no explicit `day` (see AthleteCheckin.tsx
+ * /AthleteRuns.tsx, which both now always pass this value through
+ * explicitly rather than ever omitting it) would silently land on the
+ * backend's UTC "today", which the *next* calendar day's local-morning
+ * page load would then also call "today" -- pre-filling the form with
+ * last night's answers as if already submitted, while the real
+ * yesterday showed nothing at all. Central time hits this for roughly
+ * 7pm-midnight local, every single day -- not a rare edge case.
+ */
 export function todayKey(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 /** "YYYY-MM-DD" -> "Today" / "Yesterday" / "Mon, Jan 5", for a backdating picker. */
@@ -44,8 +62,13 @@ export function dayLabel(dayStr: string, now: Date = new Date()): string {
 /** The last `windowDays` days (today first, oldest last) as {value, label} options for a backdating <select>. */
 export function recentDayOptions(windowDays: number = BACKDATE_WINDOW_DAYS, now: Date = new Date()): Array<{ value: string; label: string }> {
   return Array.from({ length: windowDays }, (_, i) => {
-    const value = new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10);
-    return { value, label: dayLabel(value, now) };
+    // Local calendar-day subtraction (not a raw i*86400000ms shift, which
+    // would fight a DST transition by up to an hour) -- same local-day
+    // reasoning as todayKey() above, so every value in this list lines up
+    // with what todayKey() calls "today".
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    return { value: todayKey(d), label: dayLabel(todayKey(d), now) };
   });
 }
 

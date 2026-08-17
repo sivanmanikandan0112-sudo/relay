@@ -178,6 +178,26 @@ same day (no per-day uniqueness for runs, unchanged). Submitting a backdated ent
 week's stored `ReadinessScore` snapshot — otherwise a corrected day sitting in an earlier ISO week
 would never update the row the multi-week trend chart actually reads.
 
+### "Today" is the athlete's local calendar day, not UTC
+
+`lib/format.ts`'s `todayKey()` — what both the Check-in and My Runs pages call "today" — computes
+the browser's *local* calendar day (`now.getFullYear()`/`getMonth()`/`getDate()`), not
+`now.toISOString().slice(0, 10)` (always UTC), which is what it used to be. The old UTC version was
+a real, frequently-hit bug for anyone west of UTC (every US timezone): from local evening until
+UTC midnight, UTC's calendar day has already rolled over to "tomorrow" while the athlete is still
+very much living in "today" — for Central time that's roughly 7pm–midnight local, every single
+day, not a rare edge case. An evening check-in submitted with no explicit `day` (both pages used to
+omit it for "today", relying on the backend's own UTC `now` to decide) would silently land on
+tomorrow's bucket; the next calendar day's morning page load would then also call that same UTC
+day "today", pre-filling the form with last night's answers as if already submitted — while the
+real yesterday showed nothing at all. `AthleteCheckin.tsx` and `AthleteRuns.tsx` now both always
+pass `day` explicitly (the local `selectedDay` they already compute), never omitting it, so the
+backend's own `resolveSubmissionDay` ([`lib/date.ts`](backend/src/lib/date.ts)) never has to guess
+via its own UTC clock. No backend changes were needed — the backdating machinery described above
+already handled "resolved day differs from the server's own today" correctly, since that's exactly
+what a genuine backdated submission already looked like; this fix just makes an athlete's own
+evening "today" submissions take that same already-correct path instead of the UTC-`now` shortcut.
+
 ### Forgot password
 
 Same story: `/api/auth/forgot-password` generates a real, expiring reset token

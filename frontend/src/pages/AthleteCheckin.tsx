@@ -91,7 +91,13 @@ export function AthleteCheckin() {
   async function handleSubmit() {
     setSaving(true);
     try {
-      await api.submitWellness({ ...draft, msg: msg.trim() || undefined, day: isToday ? undefined : selectedDay });
+      // Always pass `day` explicitly, even for "today" -- selectedDay is
+      // already the browser's own local calendar day (see lib/format.ts's
+      // todayKey()), and omitting it would let the backend fall back to
+      // its own UTC "now" instead, which is the exact day-mismatch bug
+      // todayKey()'s own comment explains (an evening submission landing
+      // on the wrong calendar day once UTC has already rolled over).
+      await api.submitWellness({ ...draft, msg: msg.trim() || undefined, day: selectedDay });
       setSubmitted(true);
       refresh();
     } finally {
