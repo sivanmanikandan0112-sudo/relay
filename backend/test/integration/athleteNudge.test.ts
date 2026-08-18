@@ -3,7 +3,7 @@ import request from "supertest";
 import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
-import { dayKey } from "../../src/lib/date.js";
+import { localDayKey } from "../../src/lib/date.js";
 
 // Same mocking approach as pushReminder.test.ts -- pushEnabled forced
 // true (a real VAPID keypair can't exist in this test tier) and
@@ -45,7 +45,7 @@ describe("POST /api/athletes/:id/nudge", () => {
     await assignRoster(coach.id, athlete.id);
     await subscribe(user!.id, "https://push.example.com/nudge-done");
     await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, day: dayKey(new Date()), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
+      data: { athleteId: athlete.id, day: localDayKey(new Date()), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
     });
 
     const token = await loginAs("coach.nudge.done");

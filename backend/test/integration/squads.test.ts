@@ -3,7 +3,7 @@ import request from "supertest";
 import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, ensureSquad, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
-import { dayKey } from "../../src/lib/date.js";
+import { localDayKey } from "../../src/lib/date.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -18,7 +18,7 @@ describe("GET /api/squads/:id/checkin-rate", () => {
     await assignRoster(coach.id, checkedIn.id);
     await assignRoster(coach.id, notCheckedIn.id);
     await prisma.wellnessEntry.create({
-      data: { athleteId: checkedIn.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: checkedIn.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
 
     const token = await loginAs("coach.checkinrate");

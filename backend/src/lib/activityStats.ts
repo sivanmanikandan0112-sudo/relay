@@ -1,5 +1,5 @@
 import { prisma } from "./prisma.js";
-import { dayKey, groupByDay } from "./date.js";
+import { localDayKey } from "./date.js";
 
 export interface CheckinRatePoint {
   date: string; // "YYYY-MM-DD"
@@ -16,6 +16,19 @@ export interface CheckinRatePoint {
  * school's shared roster, or the system-wide active set) instead of
  * always being every athlete everywhere.
  *
+ * Queries and buckets directly on WellnessEntry.day, not the raw `date`
+ * timestamp -- `day` is already the correctly-resolved local calendar day
+ * a submission belongs to (see resolveSubmissionDay), so there's nothing
+ * left to re-derive. This function used to re-bucket from `date` via
+ * dayKey (UTC truncation of the raw timestamp) and anchor "today" on raw
+ * server UTC -- both wrong in the same way: a real evening check-in,
+ * correctly filed under today's `day`, could get silently miscounted as
+ * tomorrow once UTC's calendar day rolled over ahead of Central time
+ * (roughly 7pm-midnight Central, every day), and "today" itself could
+ * point at a UTC day nobody's local clock had reached yet -- together
+ * making the very last point in this series (what every caller reads as
+ * "today") read 0% for a school that had genuinely already checked in.
+ *
  * `total` is deliberately the *current* roster size held constant across
  * every day in the series, not a historical reconstruction of who was
  * rostered on each past day -- this app doesn't track roster membership
@@ -26,14 +39,15 @@ export interface CheckinRatePoint {
  */
 export async function checkinRateSeries(athleteIds: string[], days: number, now: Date = new Date()): Promise<CheckinRatePoint[]> {
   const total = athleteIds.length;
-  const start = new Date(now.getTime() - days * 86400000);
+  const today = localDayKey(now);
+  const seriesStart = new Date(today.getTime() - (days - 1) * 86400000);
 
   const entries =
     total === 0
       ? []
       : await prisma.wellnessEntry.findMany({
-          where: { athleteId: { in: athleteIds }, date: { gte: start, lte: now } },
-          select: { date: true },
+          where: { athleteId: { in: athleteIds }, day: { gte: seriesStart, lte: today } },
+          select: { day: true },
         });
 
   const counts = new Map<number, number>();
@@ -41,9 +55,8 @@ export async function checkinRateSeries(athleteIds: string[], days: number, now:
   // routes/wellness.ts), so a plain per-day row count already equals
   // "distinct athletes who checked in" -- same reasoning
   // routes/admin.ts's /activity/checkins already relies on.
-  for (const { day, items } of groupByDay(entries, (e) => e.date)) counts.set(day.getTime(), items.length);
+  for (const e of entries) counts.set(e.day.getTime(), (counts.get(e.day.getTime()) ?? 0) + 1);
 
-  const seriesStart = dayKey(new Date(now.getTime() - (days - 1) * 86400000));
   const out: CheckinRatePoint[] = [];
   for (let i = 0; i < days; i++) {
     const day = new Date(seriesStart.getTime() + i * 86400000);

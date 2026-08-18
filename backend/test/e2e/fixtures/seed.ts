@@ -7,7 +7,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../../../src/lib/prisma.js";
 import { recomputeReadiness } from "../../../src/lib/scoring.js";
-import { dayKey } from "../../../src/lib/date.js";
+import { localDayKey } from "../../../src/lib/date.js";
 import { E2E_PASSWORD } from "./constants.js";
 
 const NOW = new Date();
@@ -66,7 +66,7 @@ async function main() {
       data: {
         athleteId: fresh.athlete.id,
         date: daysAgo(n),
-        day: dayKey(daysAgo(n)),
+        day: localDayKey(daysAgo(n)),
         sleep: n % 2 === 0 ? 5 : 4,
         soreness: n % 3 === 0 ? 2 : 1,
         mood: n % 2 === 0 ? 4 : 5,
@@ -88,7 +88,7 @@ async function main() {
       data: {
         athleteId: struggling.athlete.id,
         date: daysAgo(n),
-        day: dayKey(daysAgo(n)),
+        day: localDayKey(daysAgo(n)),
         sleep: n % 2 === 0 ? 2 : 3,
         soreness: n % 2 === 0 ? 4 : 3,
         mood: n % 2 === 0 ? 2 : 3,
@@ -115,7 +115,7 @@ async function main() {
   // the underlying score computes to.
   for (let n = 21; n >= 4; n--) {
     await prisma.wellnessEntry.create({
-      data: { athleteId: injured.athlete.id, date: daysAgo(n), day: dayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: injured.athlete.id, date: daysAgo(n), day: localDayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     await prisma.trainingLoad.create({
       data: { athleteId: injured.athlete.id, date: daysAgo(n), runType: "Easy", distanceMiles: 5, durationMin: 45, rpe: 4, load: 180 },
@@ -131,7 +131,7 @@ async function main() {
   // toward the baseline (docs/math-behind-relay.md §9).
   for (let n = 21; n >= 1; n--) {
     await prisma.wellnessEntry.create({
-      data: { athleteId: returning.athlete.id, date: daysAgo(n), day: dayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: returning.athlete.id, date: daysAgo(n), day: localDayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     if (n <= 10) {
       await prisma.trainingLoad.create({
@@ -156,7 +156,7 @@ async function main() {
   // the minimum-history gate holds them at a neutral default instead.
   for (let n = 3; n >= 1; n--) {
     await prisma.wellnessEntry.create({
-      data: { athleteId: newcomer.athlete.id, date: daysAgo(n), day: dayKey(daysAgo(n)), sleep: 5, soreness: 1, mood: 5, energy: 5, motivation: 5 },
+      data: { athleteId: newcomer.athlete.id, date: daysAgo(n), day: localDayKey(daysAgo(n)), sleep: 5, soreness: 1, mood: 5, energy: 5, motivation: 5 },
     });
     await prisma.trainingLoad.create({
       data: { athleteId: newcomer.athlete.id, date: daysAgo(n), runType: "Easy", distanceMiles: 8, durationMin: 60, rpe: 5, load: 300 },
@@ -172,7 +172,7 @@ async function main() {
       data: {
         athleteId: journey.athlete.id,
         date: daysAgo(n),
-        day: dayKey(daysAgo(n)),
+        day: localDayKey(daysAgo(n)),
         sleep: n % 2 === 0 ? 4 : 3,
         soreness: n % 2 === 0 ? 2 : 3,
         mood: n % 2 === 0 ? 4 : 3,
@@ -190,7 +190,7 @@ async function main() {
   // isolated.athlete: coach.two's only athlete -- exists purely to prove
   // coach.one can never see them.
   await prisma.wellnessEntry.create({
-    data: { athleteId: isolated.athlete.id, date: daysAgo(1), day: dayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    data: { athleteId: isolated.athlete.id, date: daysAgo(1), day: localDayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
   });
 
   for (const { athlete } of [fresh, struggling, injured, returning, newcomer, journey, isolated]) {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, loginAs } from "./helpers.js";
 import { assignRoster, assignSchool, createAthlete, createCoach, daysAgo, ensureSchool, resetDb } from "../testDb.js";
-import { dayKey } from "../../src/lib/date.js";
+import { localDayKey } from "../../src/lib/date.js";
 import { prisma } from "../../src/lib/prisma.js";
 
 beforeEach(async () => {
@@ -84,14 +84,14 @@ describe("GET /api/admin/overview -- today's check-in rate", () => {
 
     // Only 2 of the 4 rostered athletes check in today.
     await prisma.wellnessEntry.create({
-      data: { athleteId: a1.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: a1.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     await prisma.wellnessEntry.create({
-      data: { athleteId: a2.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: a2.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     // a3 checked in YESTERDAY, not today -- shouldn't count.
     await prisma.wellnessEntry.create({
-      data: { athleteId: a3.id, day: dayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: a3.id, day: localDayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
 
     const token = await loginAs("coach.rate.mixed");
@@ -114,10 +114,10 @@ describe("GET /api/admin/overview -- today's check-in rate", () => {
 
     // Both check in today...
     await prisma.wellnessEntry.create({
-      data: { athleteId: staying.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: staying.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     await prisma.wellnessEntry.create({
-      data: { athleteId: leaving.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: leaving.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
 
     const token = await loginAs("coach.rate.removed");
@@ -183,7 +183,7 @@ describe("GET /api/admin/schools/:id", () => {
     const { athlete } = await createAthlete({ username: "ath.schoolathletes", firstName: "Roster", lastName: "Kid", squad: "BOYS" });
     await assignRoster(coach.id, athlete.id);
     await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, day: dayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: athlete.id, day: localDayKey(new Date()), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
 
     const token = await loginAs("coach.admin4");
@@ -227,7 +227,7 @@ describe("login records a LoginEvent, deduped per day", () => {
     const events = await prisma.loginEvent.findMany({ where: { userId: user.id } });
     expect(events).toHaveLength(1);
     expect(events[0].role).toBe("COACH");
-    expect(events[0].day.getTime()).toBe(dayKey(new Date()).getTime());
+    expect(events[0].day.getTime()).toBe(localDayKey(new Date()).getTime());
   });
 
   it("athlete logins are recorded too, with role ATHLETE", async () => {
@@ -249,13 +249,13 @@ describe("GET /api/admin/activity/checkins", () => {
 
     // Two athletes checked in yesterday, one checked in 3 days ago, nobody today or 2 days ago.
     await prisma.wellnessEntry.create({
-      data: { athleteId: a.id, date: daysAgo(1), day: dayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: a.id, date: daysAgo(1), day: localDayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     await prisma.wellnessEntry.create({
-      data: { athleteId: b.id, date: daysAgo(1), day: dayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: b.id, date: daysAgo(1), day: localDayKey(daysAgo(1)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
     await prisma.wellnessEntry.create({
-      data: { athleteId: a.id, date: daysAgo(3), day: dayKey(daysAgo(3)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+      data: { athleteId: a.id, date: daysAgo(3), day: localDayKey(daysAgo(3)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
     });
 
     const token = await loginAs("coach.activity.checkins");
@@ -264,7 +264,7 @@ describe("GET /api/admin/activity/checkins", () => {
     expect(res.body).toHaveLength(7); // zero-filled, one point per day regardless of data
 
     const byDate = new Map(res.body.map((p: { date: string; count: number }) => [p.date, p.count]));
-    const iso = (n: number) => dayKey(daysAgo(n)).toISOString().slice(0, 10);
+    const iso = (n: number) => localDayKey(daysAgo(n)).toISOString().slice(0, 10);
     expect(byDate.get(iso(1))).toBe(2);
     expect(byDate.get(iso(2))).toBe(0); // a genuinely quiet day, present as a real zero, not missing
     expect(byDate.get(iso(3))).toBe(1);
@@ -290,7 +290,7 @@ describe("GET /api/admin/activity/runs", () => {
     expect(res.status).toBe(200);
 
     const byDate = new Map(res.body.map((p: { date: string; count: number }) => [p.date, p.count]));
-    expect(byDate.get(dayKey(daysAgo(1)).toISOString().slice(0, 10))).toBe(1); // one athlete, not two run rows
+    expect(byDate.get(localDayKey(daysAgo(1)).toISOString().slice(0, 10))).toBe(1); // one athlete, not two run rows
   });
 });
 
@@ -309,7 +309,7 @@ describe("GET /api/admin/activity/coach-logins", () => {
     expect(res.status).toBe(200);
 
     const byDate = new Map(res.body.map((p: { date: string; count: number }) => [p.date, p.count]));
-    expect(byDate.get(dayKey(new Date()).toISOString().slice(0, 10))).toBe(2); // 2 distinct coaches logged in today, not the athlete
+    expect(byDate.get(localDayKey(new Date()).toISOString().slice(0, 10))).toBe(2); // 2 distinct coaches logged in today, not the athlete
   });
 
   it("400s on an out-of-range days param", async () => {

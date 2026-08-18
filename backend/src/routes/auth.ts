@@ -9,7 +9,7 @@ import { issueResetToken } from "../lib/passwordReset.js";
 import { hashToken } from "../lib/tokenHash.js";
 import { decrypt } from "../lib/crypto.js";
 import { loginLimiter, forgotPasswordLimiter, mfaVerifyLimiter, googleLoginLimiter } from "../lib/rateLimit.js";
-import { dayKey } from "../lib/date.js";
+import { localDayKey } from "../lib/date.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import type { User, School } from "@prisma/client";
 
@@ -38,7 +38,7 @@ async function buildSession(user: User & { school: School | null }) {
   // user logging in five times today is still just one day of activity,
   // not five. Both real-session paths that call buildSession (plain
   // login and MFA-verify completion) get this for free from here.
-  const day = dayKey(new Date());
+  const day = localDayKey(new Date());
   await prisma.loginEvent.upsert({
     where: { userId_day: { userId: user.id, day } },
     update: {},

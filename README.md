@@ -218,6 +218,54 @@ which call is unconditional: the already-resolved local `date` now always recomp
 `now` is only used for the conditional second pass (refreshing *today's* live score too, when a
 backdated entry lands on an earlier day).
 
+**A third, separate version of the same mistake lived in every server-side "what day is it right
+now" computation that has no caller-supplied local day to anchor to at all** — unlike the two fixes
+above, which are about resolving *a specific submission's* day (always driven by the browser's own
+local clock once it reaches the backend), this is about code with no submission to key off of:
+check-in-rate stats, activity calendars, "has this athlete already checked in today" gates. All of
+it used to fall back to `dayKey(new Date())` — the *server's* raw UTC calendar day — which runs a
+full day ahead of Central time for several hours every single evening, so a coach checking the
+Board at 8pm could see **"0 checked in today"** while the team had genuinely already checked in; the
+real activity was sitting in what the UI called "yesterday" instead. `lib/date.ts` now has a second
+helper, `localDayKey()`, anchored to `America/Chicago` (via `Intl.DateTimeFormat`) instead of raw
+UTC — the same single-timezone assumption the daily push reminder cron already made explicit with
+its own `timezone: "America/Chicago"` option, just applied consistently everywhere else "today"
+gets computed with no local day of its own to go on. This replaced `dayKey(new Date())` in:
+
+- [`lib/activityStats.ts`](backend/src/lib/activityStats.ts)'s `checkinRateSeries` — the Board's
+  "X% checked in today" stat and the admin school-detail equivalent. This one had a second bug on
+  top of the wrong "today" anchor: it queried and bucketed by `WellnessEntry`'s raw `date` timestamp
+  (re-deriving a day via `dayKey`) instead of the already-correctly-resolved `day` field, so even a
+  genuinely same-evening check-in could get miscounted onto the wrong bucket. Now queries and
+  buckets on `day` directly — nothing left to re-derive.
+- `routes/admin.ts`'s `/overview` (`checkinRate`) and its three `/activity/*` calendars
+  (`checkins`/`runs`/`coach-logins`) — same "today" anchor fix, plus the same `date`-vs-`day`
+  re-bucketing fix for `/activity/checkins` (`WellnessEntry`) and `/activity/coach-logins`
+  (`LoginEvent`, which already had a `day` field). `/activity/runs` has no such field to fall back on
+  — `TrainingLoad` only ever stores a raw `date` — so it still derives a day from that timestamp, now
+  via `localDayKey` instead of `dayKey` (`lib/date.ts`'s `groupByDay` gained an optional key-function
+  parameter for exactly this case).
+- `routes/auth.ts`'s `buildSession` — the `LoginEvent.day` a coach's login gets recorded under,
+  which every activity calendar above and the admin overview's own login-based stats read back.
+- `routes/athletes.ts`'s nudge route and `lib/pushReminder.ts`'s daily reminder — both gate on "has
+  this athlete already checked in today"; both used to ask that question with the same wrong UTC
+  anchor, so an athlete who'd genuinely already checked in this evening could still get nudged again,
+  or a coach's manual nudge could 400 as "no device" for the wrong reason after silently treating a
+  real check-in as if it hadn't happened yet.
+- `lib/date.ts`'s `resolveSubmissionDay` itself — its "today" (used for the future-submission guard
+  and the backdate-window floor) is now `localDayKey`-anchored too, for consistency; in practice this
+  only ever makes the allowed window very slightly *more* permissive during the same evening window,
+  never less, since Central time never runs ahead of UTC.
+
+Found by a coach reporting real athletes at their school whose evening check-ins didn't seem to
+count toward the day's stat — traced by reading the actual data through a temporary read-only script
+against the production database (see [`lib/activityStats.ts`](backend/src/lib/activityStats.ts) and
+[`routes/admin.ts`](backend/src/routes/admin.ts)), the same way the original UTC bug above was
+diagnosed. See [`date.test.ts`](backend/src/lib/date.test.ts) and
+[`test/integration/activityStats.test.ts`](backend/test/integration/activityStats.test.ts) for the
+regression coverage, including a deterministic evening-UTC-rollover case rather than one that only
+occasionally fails depending on when the suite happens to run.
+
 ### Forgot password
 
 Same story: `/api/auth/forgot-password` generates a real, expiring reset token
@@ -688,6 +736,22 @@ demo dataset: two flagged boys both happened to hash to "Wed PM" only, none of t
 slots, so all three slots filled with `FRESH` athletes instead. Dropping the fake availability
 model entirely — no slots, no schedule, just "these are your top N people" plus a real
 "did I talk to them" record — removes the whole class of bug rather than patching the hash.
+
+### Coach notes — where the athlete actually sees them
+
+A coach leaves a note on an athlete (`POST /api/notes`, `{athleteId, body}`) from the "Note" button
+on a Brief card, a Board lane, or an athlete's detail drawer —
+[`components/NoteModal.tsx`](frontend/src/components/NoteModal.tsx). It's a real, persisted `Note`
+row from the moment it's sent, not a dummy input: `GET /api/notes/athlete/:athleteId` is already
+gated by the same `canAccessAthlete` every self-access endpoint uses, so the athlete themself can
+always read it back.
+
+The gap was purely on the frontend, and only a partial one: `AthleteRuns.tsx` (My Runs) already had
+a "NOTES FROM YOUR COACH" section rendering every note with the coach's name and date — but
+`AthleteCheckin.tsx`, the page an athlete actually lands on first, had none. A note only ever showed
+up if the athlete happened to visit My Runs too, which for anyone who mostly just checks in and
+leaves, they might never do. `AthleteCheckin.tsx` now fetches and renders the same section, in the
+same style, so a note reaches the athlete on the very page a coach's own workflow assumes it does.
 
 ### Athlete readiness visibility (self-service, off by default)
 

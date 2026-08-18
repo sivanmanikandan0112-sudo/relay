@@ -19,16 +19,57 @@ export function dayKey(date: Date): Date {
 }
 
 /**
- * Buckets a chronologically-sorted list of items by their UTC calendar day
- * (via dayKey), returning one { day, items } group per day, in the same
- * order the days first appear. Used to turn "one row per run/entry" data
- * into "one point per day" trend series without assuming anything about
- * how many rows landed on a given day.
+ * Same idea as dayKey(), but truncates to the calendar day America/Chicago
+ * sees, not UTC. dayKey() is exactly right when a caller already resolved
+ * a *specific* local day itself and just needs it encoded consistently --
+ * that's exactly what resolveSubmissionDay does below with a caller-
+ * supplied "YYYY-MM-DD" (the frontend's own todayKey() already picked the
+ * athlete's real local day before sending it), so dayKey() of that string
+ * needs no further timezone awareness.
+ *
+ * This function is for the opposite situation: server-side code with no
+ * caller-supplied local day to anchor to at all -- "what day is it right
+ * now" for activity stats, check-in-rate series, and login-event
+ * bucketing. Falling back to dayKey(new Date()) there means "today" is
+ * whatever the server's raw UTC day happens to be, which runs a full
+ * calendar day ahead of Central time for several hours every single
+ * evening (roughly 7pm-midnight Central, before UTC has rolled past
+ * midnight) -- so a coach checking the board at 8pm sees "0 checked in
+ * today" while the real check-ins sit in what this code would call
+ * "yesterday". This app doesn't track a per-athlete/coach timezone (see
+ * resolveSubmissionDay's own comment below), so this can't be correct for
+ * every user everywhere -- but it's the same single-timezone assumption
+ * the daily push reminder cron already makes explicit (see index.ts's own
+ * `timezone: "America/Chicago"`), and matches this app's actual user base
+ * far more often than raw server UTC does.
  */
-export function groupByDay<T>(items: T[], getDate: (item: T) => Date): Array<{ day: Date; items: T[] }> {
+export function localDayKey(date: Date): Date {
+  // en-CA formats as "YYYY-MM-DD" -- exactly the shape a plain
+  // `${ymd}T00:00:00.000Z` parse expects, so this reuses the same
+  // "encode a Y-M-D as UTC midnight" convention as dayKey() itself
+  // without hand-rolling the timezone offset math (which would also need
+  // to know about DST transitions).
+  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(date);
+  return new Date(`${ymd}T00:00:00.000Z`);
+}
+
+/**
+ * Buckets a chronologically-sorted list of items by calendar day (via
+ * dayKey by default, or a caller-supplied keyFn -- e.g. localDayKey, for
+ * data with no pre-resolved local-day field to group on directly, like
+ * TrainingLoad's raw `date`), returning one { day, items } group per day,
+ * in the same order the days first appear. Used to turn "one row per
+ * run/entry" data into "one point per day" trend series without assuming
+ * anything about how many rows landed on a given day.
+ */
+export function groupByDay<T>(
+  items: T[],
+  getDate: (item: T) => Date,
+  keyFn: (date: Date) => Date = dayKey
+): Array<{ day: Date; items: T[] }> {
   const groups = new Map<number, { day: Date; items: T[] }>();
   for (const item of items) {
-    const day = dayKey(getDate(item));
+    const day = keyFn(getDate(item));
     const key = day.getTime();
     const existing = groups.get(key);
     if (existing) existing.items.push(item);
@@ -65,9 +106,20 @@ export interface ResolvedSubmissionDay {
  * query in this codebase (all of which compare against a `now` reading,
  * never another midnight) without a timezone-boundary case shoving it a
  * millisecond into the wrong day.
+ *
+ * "today" here is anchored via localDayKey, not dayKey -- the same reason
+ * localDayKey exists at all (see its own comment above): using raw UTC
+ * would make the future-submission guard and the backdate-window floor
+ * both silently shift a day early during the evening window (roughly
+ * 7pm-midnight Central), rejecting a legitimate 7-day-old backdate one
+ * day sooner than it should. Doesn't affect the (now much rarer)
+ * dayInput===undefined branch's own result in practice -- both frontend
+ * callers always send an explicit day -- but keeps this function's
+ * definition of "today" consistent with everywhere else in the app that
+ * needs one without a caller-supplied local day of its own.
  */
 export function resolveSubmissionDay(now: Date, dayInput?: string): ResolvedSubmissionDay | null {
-  const today = dayKey(now);
+  const today = localDayKey(now);
   if (dayInput === undefined) return { day: today, date: now };
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dayInput)) return null;

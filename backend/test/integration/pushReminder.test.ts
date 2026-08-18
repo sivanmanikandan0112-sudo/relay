@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAthlete, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
-import { dayKey } from "../../src/lib/date.js";
+import { localDayKey } from "../../src/lib/date.js";
 
 // Same mocking approach as pushSubscription.test.ts -- pushEnabled forced
 // true (a real VAPID keypair can't exist in this test tier) and
@@ -41,7 +41,7 @@ describe("sendCheckinReminders", () => {
     const { user, athlete } = await createAthlete({ username: "ath.remind.done", firstName: "Done", lastName: "Athlete", squad: "GIRLS" });
     await subscribe(user!.id, "https://push.example.com/done");
     await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, day: dayKey(new Date()), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
+      data: { athleteId: athlete.id, day: localDayKey(new Date()), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
     });
 
     const result = await sendCheckinReminders();

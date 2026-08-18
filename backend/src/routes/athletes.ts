@@ -4,7 +4,7 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { canAccessAthlete, isCoachOfAthlete } from "../lib/authz.js";
 import { computeReadinessBreakdown } from "../lib/scoring.js";
 import { getDataPhase, mean } from "../lib/math.js";
-import { dayKey, groupByDay } from "../lib/date.js";
+import { groupByDay, localDayKey } from "../lib/date.js";
 import { pushEnabled, trySendPush } from "../lib/push.js";
 
 export const athletesRouter = Router();
@@ -81,7 +81,9 @@ athletesRouter.post("/:id/nudge", requireRole("COACH"), async (req, res) => {
   });
   if (!athlete) return res.status(404).json({ error: "Athlete not found" });
 
-  const today = dayKey(new Date());
+  // localDayKey, not dayKey -- see lib/pushReminder.ts's own comment on
+  // this exact same check, which this route intentionally mirrors.
+  const today = localDayKey(new Date());
   const checkedInToday = await prisma.wellnessEntry.findUnique({ where: { athleteId_day: { athleteId, day: today } } });
   if (checkedInToday) {
     return res.status(400).json({ error: "This athlete already checked in today" });

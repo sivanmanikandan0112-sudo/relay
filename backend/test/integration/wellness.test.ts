@@ -4,7 +4,7 @@ import { app, loginAs } from "./helpers.js";
 import { assignRoster, createAthlete, createCoach, daysAgo, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { computeReadinessBreakdown, recomputeReadiness } from "../../src/lib/scoring.js";
-import { dayKey } from "../../src/lib/date.js";
+import { localDayKey } from "../../src/lib/date.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -49,7 +49,7 @@ describe("POST /api/wellness", () => {
     // reflect the real span from the oldest entry through today, same as the pipeline itself.
     for (let n = 20; n >= 1; n--) {
       await prisma.wellnessEntry.create({
-        data: { athleteId: athlete.id, date: daysAgo(n), day: dayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+        data: { athleteId: athlete.id, date: daysAgo(n), day: localDayKey(daysAgo(n)), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
       });
     }
     await request(app)
@@ -112,7 +112,7 @@ describe("POST /api/wellness", () => {
 
     // Backdate athlete A's yesterday manually, then submit "today" for real -- two distinct days, two rows.
     await prisma.wellnessEntry.create({
-      data: { athleteId: athleteA.id, date: daysAgo(1), day: dayKey(daysAgo(1)), sleep: 2, soreness: 4, mood: 2, energy: 2, motivation: 2 },
+      data: { athleteId: athleteA.id, date: daysAgo(1), day: localDayKey(daysAgo(1)), sleep: 2, soreness: 4, mood: 2, energy: 2, motivation: 2 },
     });
     const all = await prisma.wellnessEntry.findMany({ where: { athleteId: athleteA.id } });
     expect(all).toHaveLength(2); // yesterday's backdated row + today's real submission, untouched by each other
@@ -150,7 +150,7 @@ describe("POST /api/wellness", () => {
       .send({ sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3, day: dayStr });
     expect(res.status).toBe(201);
     expect(new Date(res.body.day).toISOString().slice(0, 10)).toBe(dayStr);
-    expect(new Date(res.body.day).getTime()).not.toBe(dayKey(new Date()).getTime());
+    expect(new Date(res.body.day).getTime()).not.toBe(localDayKey(new Date()).getTime());
 
     // Backdating refreshes its own week's ReadinessScore snapshot in
     // addition to today's live one -- two rows, not one, once the
@@ -228,7 +228,7 @@ describe("POST /api/wellness", () => {
       data: strongDays.map((n) => ({
         athleteId: athlete.id,
         date: daysAgo(n),
-        day: dayKey(daysAgo(n)),
+        day: localDayKey(daysAgo(n)),
         sleep: n % 2 === 0 ? 5 : 4,
         soreness: n % 3 === 0 ? 2 : 1,
         mood: n % 2 === 0 ? 4 : 5,

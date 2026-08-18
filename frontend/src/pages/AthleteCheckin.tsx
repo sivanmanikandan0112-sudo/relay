@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
+import { api, type Note, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
 import { computeStreak, dayLabel, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
@@ -16,6 +16,7 @@ export function AthleteCheckin() {
   const { user } = useAuth();
   const athleteId = user?.athleteId ?? null;
   const [history, setHistory] = useState<WellnessEntry[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [selectedDay, setSelectedDay] = useState(todayKey());
   const [draft, setDraft] = useState({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
   const [msg, setMsg] = useState("");
@@ -26,6 +27,10 @@ export function AthleteCheckin() {
   function refresh() {
     if (!athleteId) return;
     api.wellnessForAthlete(athleteId).then(setHistory);
+    // Coach notes already reached the athlete on My Runs -- this is the
+    // page they actually land on first, so a note left there was easy to
+    // never see at all unless they happened to visit My Runs too.
+    api.notesForAthlete(athleteId).then(setNotes);
   }
 
   useEffect(refresh, [athleteId]);
@@ -231,6 +236,27 @@ export function AthleteCheckin() {
             not nudged toward yesterday's. Your coach sees the pattern.
           </div>
         </div>
+      )}
+
+      {notes.length > 0 && (
+        <>
+          <div className="field-hint" style={{ margin: "20px 0 8px" }}>
+            NOTES FROM YOUR COACH
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {notes.map((n) => (
+              <div className="run-note" key={n.id} style={{ borderRadius: 9, border: "1px solid #5a3f16" }}>
+                <span className="icon">✍</span>
+                <div>
+                  <div className="date">
+                    {n.coach.name} · {formatShortDate(n.createdAt)}
+                  </div>
+                  <div className="text">{n.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {messages.length > 0 && (

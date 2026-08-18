@@ -6,7 +6,7 @@ import { getCoachAthleteIds, getSchoolAthleteIds } from "../lib/authz.js";
 import { getSchoolDetail } from "../lib/schoolDetail.js";
 import { issueResetToken } from "../lib/passwordReset.js";
 import { emailEnabled, trySendEmail } from "../lib/email.js";
-import { dayKey, groupByDay } from "../lib/date.js";
+import { groupByDay, localDayKey } from "../lib/date.js";
 import { checkinRateSeries } from "../lib/activityStats.js";
 
 // System-wide, read-only view across every school/coach/athlete --
@@ -20,7 +20,11 @@ export const adminRouter = Router();
 adminRouter.use(requireAuth, requireSuperAdmin);
 
 adminRouter.get("/overview", async (_req, res) => {
-  const today = dayKey(new Date());
+  // localDayKey, not dayKey -- see lib/date.ts's own comment. Raw UTC
+  // "today" runs a full day ahead of Central time for several hours every
+  // evening, which used to make this stat read 0% right when a school's
+  // real evening check-ins were happening.
+  const today = localDayKey(new Date());
   const [schoolCount, coachCount, athleteCount, soloCoachCount, activeAthleteRows] = await Promise.all([
     prisma.school.count(),
     prisma.user.count({ where: { role: "COACH" } }),
@@ -42,9 +46,9 @@ adminRouter.get("/overview", async (_req, res) => {
   // not every WellnessEntry system-wide -- so a removed athlete's old
   // check-in history (still real, still in the database) can never
   // inflate today's rate past what the *current* roster actually did.
-  // WellnessEntry.day is already the UTC calendar-day key every check-in
-  // is stored under (see lib/date.ts's dayKey), the same convention the
-  // /activity/checkins calendar below already uses.
+  // WellnessEntry.day is already the correctly-resolved local calendar
+  // day a check-in belongs to (see resolveSubmissionDay) -- `today` just
+  // needs to be anchored the same way (localDayKey, above) to match it.
   const checkedInToday = await prisma.wellnessEntry.findMany({
     where: { day: today, athleteId: { in: activeAthleteIds } },
     distinct: ["athleteId"],
@@ -290,9 +294,16 @@ adminRouter.post("/users/:id/reset-mfa", async (req, res) => {
 
 const activityQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(400).default(90) });
 
-/** {dayKey timestamp -> count} to a zero-filled, oldest-first array covering exactly `days` days through today. */
+/**
+ * {dayKey timestamp -> count} to a zero-filled, oldest-first array
+ * covering exactly `days` days through today. Anchored via localDayKey,
+ * not dayKey -- raw UTC "today" runs a full day ahead of Central time for
+ * several hours every evening, which used to make the very last point in
+ * every one of these calendars (what the frontend always reads as
+ * "today") land on a UTC day nobody's local clock had reached yet.
+ */
 function zeroFilledDailyCounts(counts: Map<number, number>, days: number, now: Date): Array<{ date: string; count: number }> {
-  const start = dayKey(new Date(now.getTime() - (days - 1) * 86400000));
+  const start = new Date(localDayKey(now).getTime() - (days - 1) * 86400000);
   const out: Array<{ date: string; count: number }> = [];
   for (let i = 0; i < days; i++) {
     const day = new Date(start.getTime() + i * 86400000);
@@ -304,23 +315,32 @@ function zeroFilledDailyCounts(counts: Map<number, number>, days: number, now: D
 // Checked in -- WellnessEntry is already at most one row per athlete per
 // day (see routes/wellness.ts), so a plain per-day row count already
 // equals "distinct athletes who checked in", no de-duping needed here.
+// Queries/counts on the `day` field directly (already the correctly-
+// resolved local calendar day, see resolveSubmissionDay) rather than
+// re-deriving a day from the raw `date` timestamp via dayKey -- same
+// fix, same reasoning as lib/activityStats.ts's checkinRateSeries.
 adminRouter.get("/activity/checkins", async (req, res) => {
   const parsed = activityQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { days } = parsed.data;
   const now = new Date();
-  const start = new Date(now.getTime() - days * 86400000);
+  const today = localDayKey(now);
+  const start = new Date(today.getTime() - (days - 1) * 86400000);
 
-  const entries = await prisma.wellnessEntry.findMany({ where: { date: { gte: start, lte: now } }, select: { date: true } });
+  const entries = await prisma.wellnessEntry.findMany({ where: { day: { gte: start, lte: today } }, select: { day: true } });
   const counts = new Map<number, number>();
-  for (const { day, items } of groupByDay(entries, (e) => e.date)) counts.set(day.getTime(), items.length);
+  for (const e of entries) counts.set(e.day.getTime(), (counts.get(e.day.getTime()) ?? 0) + 1);
   res.json(zeroFilledDailyCounts(counts, days, now));
 });
 
 // Logged a run -- TrainingLoad deliberately allows more than one row per
 // athlete per day (two-a-days), so this counts *distinct athletes*, not
 // raw run rows -- a two-a-day shouldn't make a day look like two people
-// were active when it was one.
+// were active when it was one. TrainingLoad has no pre-resolved local-day
+// field of its own to query on directly (unlike WellnessEntry.day), so
+// this still has to derive one from the raw `date` timestamp -- but via
+// localDayKey, not dayKey, so an evening run doesn't get miscounted as
+// tomorrow's the moment UTC's calendar day rolls over ahead of Central.
 adminRouter.get("/activity/runs", async (req, res) => {
   const parsed = activityQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -330,27 +350,30 @@ adminRouter.get("/activity/runs", async (req, res) => {
 
   const loads = await prisma.trainingLoad.findMany({ where: { date: { gte: start, lte: now } }, select: { date: true, athleteId: true } });
   const counts = new Map<number, number>();
-  for (const { day, items } of groupByDay(loads, (l) => l.date)) {
+  for (const { day, items } of groupByDay(loads, (l) => l.date, localDayKey)) {
     counts.set(day.getTime(), new Set(items.map((l) => l.athleteId)).size);
   }
   res.json(zeroFilledDailyCounts(counts, days, now));
 });
 
 // Coach logged in -- LoginEvent is already at most one row per user per
-// day (upserted in routes/auth.ts's buildSession), so again a plain
-// per-day row count already equals "distinct coaches who logged in".
+// day (upserted in routes/auth.ts's buildSession, itself now anchored via
+// localDayKey), so again a plain per-day row count already equals
+// "distinct coaches who logged in", grouped on the already-correct `day`
+// field directly.
 adminRouter.get("/activity/coach-logins", async (req, res) => {
   const parsed = activityQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { days } = parsed.data;
   const now = new Date();
-  const start = new Date(now.getTime() - days * 86400000);
+  const today = localDayKey(now);
+  const start = new Date(today.getTime() - (days - 1) * 86400000);
 
   const events = await prisma.loginEvent.findMany({
-    where: { role: "COACH", day: { gte: start, lte: now } },
+    where: { role: "COACH", day: { gte: start, lte: today } },
     select: { day: true },
   });
   const counts = new Map<number, number>();
-  for (const { day, items } of groupByDay(events, (e) => e.day)) counts.set(day.getTime(), items.length);
+  for (const e of events) counts.set(e.day.getTime(), (counts.get(e.day.getTime()) ?? 0) + 1);
   res.json(zeroFilledDailyCounts(counts, days, now));
 });

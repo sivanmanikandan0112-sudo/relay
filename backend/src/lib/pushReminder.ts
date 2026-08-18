@@ -1,5 +1,5 @@
 import { prisma } from "./prisma.js";
-import { dayKey } from "./date.js";
+import { localDayKey } from "./date.js";
 import { pushEnabled, trySendPush } from "./push.js";
 
 export interface ReminderRunResult {
@@ -37,7 +37,14 @@ export interface ReminderRunResult {
 export async function sendCheckinReminders(now: Date = new Date()): Promise<ReminderRunResult> {
   if (!pushEnabled) return { skipped: true, eligibleAthletes: 0, sent: 0, pruned: 0 };
 
-  const today = dayKey(now);
+  // localDayKey, not dayKey -- WellnessEntry.day is the correctly-resolved
+  // local calendar day a check-in belongs to (see resolveSubmissionDay),
+  // so "today" here needs the same anchor or this reminder (and the
+  // nudge route sharing this same check, see routes/athletes.ts) would
+  // think an athlete who already checked in this evening still hasn't,
+  // right during the same UTC-rollover window that originally motivated
+  // this whole local-day fix.
+  const today = localDayKey(now);
   const athletes = await prisma.athlete.findMany({
     where: {
       user: { pushSubscriptions: { some: {} } },
