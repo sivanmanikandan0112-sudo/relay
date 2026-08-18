@@ -54,11 +54,14 @@ trainingLoadRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
     data: { athleteId, runType, distanceMiles, rpe, durationMin, load: rpe * durationMin, date },
   });
 
-  // Same "refresh today, and separately refresh the backdated day's own
-  // week's snapshot" reasoning as wellness.ts's POST /.
-  await recomputeReadiness(athleteId, now);
+  // Same "always refresh the submitted day's own week via the resolved
+  // `date`, then separately refresh today's live week if this wasn't
+  // today" reasoning as wellness.ts's POST / -- see that file's comment
+  // for exactly why `date` (not a raw `now`) is what the unconditional
+  // call needs to use.
+  await recomputeReadiness(athleteId, date);
   if (day.getTime() !== dayKey(now).getTime()) {
-    await recomputeReadiness(athleteId, date);
+    await recomputeReadiness(athleteId, now);
   }
   res.status(201).json(entry);
 });

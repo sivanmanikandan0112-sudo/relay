@@ -89,6 +89,7 @@ export const api = {
   squadCheckinRate: (squadId: string, days = 7) => request<CheckinRatePoint[]>(`/squads/${squadId}/checkin-rate?days=${days}`),
   athleteDetail: (athleteId: string) => request<AthleteDetail>(`/athletes/${athleteId}`),
   removeFromRoster: (athleteId: string) => request<{ removed: boolean }>(`/athletes/${athleteId}/roster`, { method: "DELETE" }),
+  nudgeAthlete: (athleteId: string) => request<{ sent: number; pruned: number }>(`/athletes/${athleteId}/nudge`, { method: "POST" }),
   wellnessForAthlete: (athleteId: string) => request<WellnessEntry[]>(`/wellness/athlete/${athleteId}`),
   brief: (week: number, year: number, squadId?: string) =>
     request<ReadinessScore[]>(

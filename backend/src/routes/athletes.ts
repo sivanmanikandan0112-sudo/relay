@@ -4,7 +4,8 @@ import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { canAccessAthlete, isCoachOfAthlete } from "../lib/authz.js";
 import { computeReadinessBreakdown } from "../lib/scoring.js";
 import { getDataPhase, mean } from "../lib/math.js";
-import { groupByDay } from "../lib/date.js";
+import { dayKey, groupByDay } from "../lib/date.js";
+import { pushEnabled, trySendPush } from "../lib/push.js";
 
 export const athletesRouter = Router();
 
@@ -56,6 +57,56 @@ athletesRouter.delete("/:id/roster", requireRole("COACH"), async (req, res) => {
 
   await prisma.coachAthlete.deleteMany({ where: { athleteId } });
   res.json({ removed: true });
+});
+
+// A one-off, coach-initiated push -- "I noticed this specific kid hasn't
+// checked in, give them a nudge right now" -- distinct from the
+// automatic daily reminder (lib/pushReminder.ts, still runs once a day
+// at 4pm Central for everyone who hasn't checked in). Reuses the exact
+// same "hasn't checked in yet today" gate so a coach can't nudge someone
+// who's already done it, and the same trySendPush/prune-on-"gone"
+// pattern as the daily job.
+athletesRouter.post("/:id/nudge", requireRole("COACH"), async (req, res) => {
+  const athleteId = req.params.id;
+  if (!(await isCoachOfAthlete(req.user!.sub, athleteId))) {
+    return res.status(403).json({ error: "Not your athlete" });
+  }
+  if (!pushEnabled) {
+    return res.status(503).json({ error: "Push notifications aren't configured" });
+  }
+
+  const athlete = await prisma.athlete.findUnique({
+    where: { id: athleteId },
+    select: { user: { select: { pushSubscriptions: true } } },
+  });
+  if (!athlete) return res.status(404).json({ error: "Athlete not found" });
+
+  const today = dayKey(new Date());
+  const checkedInToday = await prisma.wellnessEntry.findUnique({ where: { athleteId_day: { athleteId, day: today } } });
+  if (checkedInToday) {
+    return res.status(400).json({ error: "This athlete already checked in today" });
+  }
+
+  const subs = athlete.user?.pushSubscriptions ?? [];
+  if (subs.length === 0) {
+    return res.status(400).json({ error: "No device registered for push notifications for this athlete" });
+  }
+
+  let sent = 0;
+  let pruned = 0;
+  for (const sub of subs) {
+    const result = await trySendPush(sub, {
+      title: "Check-in nudge from your coach",
+      body: "Your coach noticed you haven't logged today's check-in yet -- takes less than a minute.",
+      url: "/checkin",
+    });
+    if (result === "sent") sent++;
+    if (result === "gone") {
+      await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+      pruned++;
+    }
+  }
+  res.json({ sent, pruned });
 });
 
 athletesRouter.get("/:id/readiness-history", async (req, res) => {

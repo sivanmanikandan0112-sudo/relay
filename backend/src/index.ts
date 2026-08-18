@@ -7,26 +7,24 @@ app.listen(env.port, () => {
   console.log(`Relay API listening on http://localhost:${env.port}`);
 });
 
-// Runs twice a day, both pinned to America/Chicago (Central) wall-clock
-// time -- fixed slots given this app doesn't track a per-athlete
-// timezone anywhere (see sendCheckinReminders's own comment). The
-// `timezone` option (not a hand-computed UTC hour) means these stay
-// pinned to 4pm/7pm Central through daylight saving changes -- node-cron
-// converts each to the right UTC trigger moment itself, both in CDT and
+// Runs once a day at 4:00 PM America/Chicago (Central time) -- a single
+// fixed slot given this app doesn't track a per-athlete timezone
+// anywhere (see sendCheckinReminders's own comment). The `timezone`
+// option (not a hand-computed UTC hour) means this stays pinned to 4pm
+// wall-clock Central through daylight saving changes -- node-cron
+// converts it to the right UTC trigger moment itself, both in CDT and
 // CST. Scheduled here in index.ts, not app.ts -- app.ts is imported by
 // every test file via supertest and deliberately has no side effects of
 // its own (see its own top-of-file comment); a cron job firing during
-// the test suite would be exactly that kind of side effect.
+// the test suite would be exactly that kind of side effect. No-ops
+// instantly (skipped: true) when VAPID keys aren't configured, so this
+// is harmless to leave running in every environment, not just production.
 //
-// Both slots call the exact same sendCheckinReminders -- it already only
-// ever selects athletes with *no check-in yet today*, with no notion of
-// "already reminded once", so the 7pm run naturally skips anyone who
-// checked in between the two (whether they logged in response to the
-// 4pm nudge or on their own) without any extra "already sent today"
-// tracking. An athlete who's still not checked in by 7pm just gets a
-// second nudge. No-ops instantly (skipped: true) when VAPID keys aren't
-// configured, so this is harmless to leave running in every environment,
-// not just production.
+// There used to be a second run at 7pm, for anyone who still hadn't
+// checked in by evening. Removed in favor of a coach-initiated,
+// per-athlete "nudge" instead (POST /api/athletes/:id/nudge) -- a coach
+// deciding a specific kid needs a push is a better fit than blanket
+// re-pinging everyone a second time every single day.
 function runReminderJob(label: string) {
   sendCheckinReminders()
     .then((result) => {
@@ -36,4 +34,3 @@ function runReminderJob(label: string) {
 }
 
 cron.schedule("0 16 * * *", () => runReminderJob("4pm"), { timezone: "America/Chicago" });
-cron.schedule("0 19 * * *", () => runReminderJob("7pm"), { timezone: "America/Chicago" });

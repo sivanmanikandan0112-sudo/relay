@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
-import { dayLabel, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
+import { computeStreak, dayLabel, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
 
@@ -87,6 +87,11 @@ export function AthleteCheckin() {
 
   const firstName = user?.firstName ?? "there";
   const messages = history.filter((h) => h.msg);
+  // A real consecutive-day count, not just history.length (which used to
+  // be reused for both "X check-ins" and "X-day streak" -- a gappy
+  // history of e.g. 15 check-ins spread across 30 days would have
+  // falsely read as a 15-day streak).
+  const streak = computeStreak(history.map((h) => h.day.slice(0, 10)));
 
   async function handleSubmit() {
     setSaving(true);
@@ -112,7 +117,7 @@ export function AthleteCheckin() {
           HEY {firstName.toUpperCase()} · 10 SECONDS
         </div>
         <span className="streak-badge">
-          ✓ {history.length} check-ins · {history.length}-day streak
+          ✓ {history.length} check-ins · {streak}-day streak
         </span>
       </div>
       <h1 className="page-title" style={{ margin: "0 0 6px" }}>

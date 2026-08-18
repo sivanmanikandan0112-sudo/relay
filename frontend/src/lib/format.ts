@@ -1,3 +1,22 @@
+/**
+ * ISO-8601 week number for a date (weeks run Mon-Sun; the week containing
+ * a year's first Thursday is week 1) -- mirrors the backend's own
+ * lib/math.ts currentIsoWeek (that one also returns the week-year, since
+ * ReadinessScore rows are keyed on both; this one only needs the week
+ * number, since every caller here already calls date.getFullYear()
+ * separately for the year half). Was previously copy-pasted identically
+ * into Brief.tsx, Layout.tsx, and Dashboard.tsx -- harmless while all
+ * three agreed, but a real drift risk the moment only one of them ever
+ * got touched.
+ */
+export function currentIsoWeek(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
 export function initials(name: string): string {
   return name
     .split(" ")
@@ -70,6 +89,38 @@ export function recentDayOptions(windowDays: number = BACKDATE_WINDOW_DAYS, now:
     d.setDate(d.getDate() - i);
     return { value: todayKey(d), label: dayLabel(todayKey(d), now) };
   });
+}
+
+/**
+ * The current consecutive-day check-in streak, ending today (or
+ * yesterday, if today's check-in just hasn't happened *yet* -- a streak
+ * shouldn't read as broken while there's still time left in the day to
+ * keep it alive). Previously this wasn't computed at all -- the UI just
+ * reused the same "how many check-ins in the last 30 days" count for
+ * both "X check-ins" and "X-day streak", which silently mislabeled any
+ * non-consecutive history (e.g. 15 check-ins spread across a gappy
+ * 30-day window would have read as a false "15-day streak"). `dayStrs`
+ * only needs to be the set of days with an entry -- callers pass
+ * `history.map(h => h.day.slice(0, 10))`.
+ */
+export function computeStreak(dayStrs: string[], now: Date = new Date()): number {
+  const days = new Set(dayStrs);
+  const cursor = new Date(now);
+  if (!days.has(todayKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!days.has(todayKey(cursor))) return 0; // neither today nor yesterday -- streak's broken
+  }
+  let streak = 0;
+  while (days.has(todayKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+/** The public accept-invite URL for a given invite token -- shared by every place that offers a "copy invite link" fallback for when email sending isn't configured (or a coach just wants to share it directly). */
+export function acceptInviteUrl(token: string): string {
+  return `${window.location.origin}/accept-invite/${token}`;
 }
 
 export function withinLastDays(iso: string, days: number, now: Date = new Date()): boolean {

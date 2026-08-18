@@ -69,15 +69,21 @@ wellnessRouter.post("/", requireRole("ATHLETE"), async (req, res) => {
     create: { ...fields, athleteId, date, day },
   });
 
-  // Always refresh today's live score (what Brief/Dashboard actually
-  // show). A backdated entry additionally gets its *own* week's snapshot
-  // refreshed -- otherwise a corrected day sitting in an earlier ISO
-  // week would never update that week's stored ReadinessScore row, which
-  // is what the multi-week trend chart reads directly (see brief.ts /
-  // athletes.ts), not a live recompute.
-  await recomputeReadiness(athleteId, now);
+  // Always refresh the submitted day's own week (what Brief/Dashboard
+  // show for that week). Uses `date` -- the already-resolved, correctly
+  // local-day-aware submission instant -- not the raw server clock: right
+  // around the athlete's own local evening, before UTC has caught up to
+  // their calendar day (see resolveSubmissionDay / todayKey's own
+  // comments), a raw `now` can compute the *next* ISO week instead of the
+  // athlete's actual current one. If this submission was for a different
+  // day than today (a genuine backdate, or that same evening mismatch),
+  // *also* refresh today's own live week using the raw clock -- otherwise
+  // a corrected earlier day would never update the current week's stored
+  // ReadinessScore row, which is what the multi-week trend chart reads
+  // directly (see brief.ts / athletes.ts), not a live recompute.
+  await recomputeReadiness(athleteId, date);
   if (day.getTime() !== dayKey(now).getTime()) {
-    await recomputeReadiness(athleteId, date);
+    await recomputeReadiness(athleteId, now);
   }
   res.status(existing ? 200 : 201).json(entry);
 });

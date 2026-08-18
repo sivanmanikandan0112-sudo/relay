@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api, type CheckinRatePoint, type ReadinessScore, type Squad } from "../lib/api";
 import { STATUS_LABEL, STATUS_COLOR, dataConfidence, scoreIsMeaningful } from "../lib/status";
-import { initials } from "../lib/format";
+import { currentIsoWeek, initials } from "../lib/format";
 import { DetailDrawer } from "../components/DetailDrawer";
 import { NoteModal } from "../components/NoteModal";
 import { BarChart } from "../components/BarChart";
@@ -16,14 +16,6 @@ const SUMMARY_DEFS: Array<{ status: ReadinessScore["status"]; label: string }> =
   { status: "RETURN_PROTOCOL", label: "protocol" },
   { status: "INJURED", label: "injured" },
 ];
-
-function currentIsoWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
 
 function trend(scores: number[]): { arrow: string; val: string; color: string } {
   if (scores.length < 2) return { arrow: "→", val: "steady", color: "#8a97ad" };
@@ -40,11 +32,20 @@ export function Dashboard() {
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{ id: string; name: string } | null>(null);
   const [checkinSeries, setCheckinSeries] = useState<CheckinRatePoint[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   function refresh() {
     if (!squadId) return;
     const now = new Date();
-    api.brief(currentIsoWeek(now), now.getFullYear(), squadId).then(setScores).catch(() => {});
+    setError(null);
+    api
+      .brief(currentIsoWeek(now), now.getFullYear(), squadId)
+      .then(setScores)
+      .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load the board"));
+    // A failure here only loses the small check-in-rate card, not the
+    // whole board -- degrades quietly (the card just doesn't render,
+    // same as "no data yet") rather than raising the same alarm as the
+    // main fetch above failing.
     api.squadCheckinRate(squadId).then(setCheckinSeries).catch(() => {});
   }
 
@@ -75,6 +76,9 @@ export function Dashboard() {
         <strong style={{ color: "#c3cddd" }}>multi-week trend</strong> vs. their own baseline — a single hard
         day doesn't flag, a drift does. Sorted by who needs you most.
       </p>
+
+      {error && <p className="error">{error}</p>}
+
       <div className="board-callout">
         <strong style={{ color: "#c9e6d0" }}>Why mood leads the lane:</strong> the research is clear that
         overtraining shows up in how an athlete <em>feels</em> — dropping mood, energy and sleep — days to

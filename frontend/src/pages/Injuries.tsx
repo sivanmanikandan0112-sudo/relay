@@ -17,19 +17,32 @@ export function Injuries() {
   const [logOpen, setLogOpen] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
 
   function refresh() {
     if (!squadId) return;
-    api.injuries(squadId).then(setInjuries).catch(() => {});
+    api
+      .injuries(squadId)
+      .then(setInjuries)
+      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't load injuries"));
   }
 
   useEffect(refresh, [squadId]);
   useEffect(() => {
     if (!squadId) return;
-    api.athletesInSquad(squadId).then(setAthletes).catch(() => {});
+    api
+      .athletesInSquad(squadId)
+      .then(setAthletes)
+      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't load your roster"));
   }, [squadId]);
 
   const active = injuries.filter((i) => i.status !== "RESOLVED");
+  // Resolved rows still exist in the data (nothing's ever deleted here --
+  // same "history stays, only visibility changes" spirit as removing an
+  // athlete from the roster) -- they just used to have nowhere to be seen
+  // once cleared, which hid real, sometimes-relevant history (recurring
+  // injury patterns) with no way to look it up again.
+  const resolved = injuries.filter((i) => i.status === "RESOLVED");
 
   async function updateStatus(id: string, status: Injury["status"]) {
     setUpdatingId(id);
@@ -135,6 +148,41 @@ export function Injuries() {
         })}
         {active.length === 0 && <p className="page-subtitle">No injuries on record.</p>}
       </div>
+
+      {resolved.length > 0 && (
+        <div className="panel">
+          <button
+            className="btn-secondary"
+            onClick={() => setShowResolved((s) => !s)}
+            style={{ marginBottom: showResolved ? 12 : 0 }}
+          >
+            {showResolved ? "Hide" : "Show"} resolved injuries ({resolved.length})
+          </button>
+          {showResolved && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {resolved.map((injury) => (
+                <div key={injury.id} className="run-item" style={{ padding: "12px 16px" }}>
+                  <div className="run-row">
+                    <span className="run-type">{injury.athlete.name}</span>
+                    <span className="injury-pill" style={{ color: PILL.RESOLVED.color, borderColor: PILL.RESOLVED.border }}>
+                      Cleared
+                    </span>
+                  </div>
+                  <div className="run-row" style={{ marginTop: 4 }}>
+                    <span className="run-meta">{injury.description}</span>
+                  </div>
+                  <div className="run-row" style={{ marginTop: 4 }}>
+                    <span className="run-meta">
+                      {new Date(injury.startDate).toLocaleDateString()}
+                      {injury.endDate ? ` – ${new Date(injury.endDate).toLocaleDateString()}` : ""}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {logOpen && (
         <InjuryModal

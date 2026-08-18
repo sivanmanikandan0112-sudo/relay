@@ -178,6 +178,16 @@ same day (no per-day uniqueness for runs, unchanged). Submitting a backdated ent
 week's stored `ReadinessScore` snapshot — otherwise a corrected day sitting in an earlier ISO week
 would never update the row the multi-week trend chart actually reads.
 
+### Check-in streak
+
+An athlete's Check-in page shows a "**N-day streak**" badge alongside their "N check-ins" count
+over the last 30 days. Those used to be the same number — the badge just reused the raw count of
+check-ins in the window, which isn't what a streak means: 15 check-ins scattered across a gappy
+30-day span isn't a "15-day streak." `lib/format.ts`'s `computeStreak()` walks backward day by day
+from today, counting consecutive days with an entry, and stops at the first gap — treating a
+missing *today* as not-yet-broken (there's still time left in the day) but a missing yesterday
+*and* today as broken. `AthleteCheckin.tsx` now computes the two numbers separately.
+
 ### "Today" is the athlete's local calendar day, not UTC
 
 `lib/format.ts`'s `todayKey()` — what both the Check-in and My Runs pages call "today" — computes
@@ -197,6 +207,16 @@ via its own UTC clock. No backend changes were needed — the backdating machine
 already handled "resolved day differs from the server's own today" correctly, since that's exactly
 what a genuine backdated submission already looked like; this fix just makes an athlete's own
 evening "today" submissions take that same already-correct path instead of the UTC-`now` shortcut.
+
+A residual version of the same bug lived one level deeper, in `routes/wellness.ts` and
+`routes/trainingLoad.ts`: after resolving the correct local `day`, both routes called
+`recomputeReadiness` twice — once unconditionally with the raw `now`, and once conditionally with
+the resolved `date` only if it differed from "today". During that same evening UTC-rollover window,
+the unconditional call could recompute the *wrong* ISO week's `ReadinessScore` row (`now`'s week,
+not the athlete's actual local-today week), leaving the right week's row stale. Fixed by swapping
+which call is unconditional: the already-resolved local `date` now always recomputes, and the raw
+`now` is only used for the conditional second pass (refreshing *today's* live score too, when a
+backdated entry lands on an earlier day).
 
 ### Forgot password
 
@@ -242,6 +262,16 @@ opposed to `sendEmail`'s own callers where sending *is* the deliverable, like fo
 additionally makes sure a flaky email provider can never affect the response at all, on top of the
 process-level safety net. See [`app.test.ts`](backend/src/app.test.ts) for the regression tests.
 
+On the frontend, a failed data-load isn't always worth an error banner — `Dashboard.tsx`'s
+supplementary check-in-rate card, for instance, deliberately still fails silently
+(`.catch(() => {})`): losing that one small stat card should degrade quietly, the same as "no data
+yet," not raise the same alarm as the main board failing to load. But the *main* fetches on
+`Dashboard.tsx` and `Injuries.tsx` used the same silent `.catch(() => {})` for their primary data —
+a genuine load failure (auth hiccup, network blip, server error) would leave the page looking
+empty with zero indication anything went wrong, unlike `Brief.tsx`, which already showed a proper
+error banner on its own equivalent fetch. Both pages now set an `error` state and render the same
+`<p className="error">` banner `Brief.tsx` already used, instead of swallowing the failure.
+
 ### Schools — shared roster visibility across a coaching staff
 
 A `Coach` (any `User` with `role: COACH`) may optionally belong to one `School`. Coaches at the
@@ -285,6 +315,13 @@ open to any school member on purpose since that list is already shared/school-wi
 scoped to whoever personally sent each one (matching `GET /api/schools/mine`'s own visibility).
 Same `rotateInviteToken` behavior as the athlete-invite resend above — fresh token, expiry pushed
 back a full 14 days, old link stops working immediately.
+
+That same "Pending coach invites" list — on both the coach-facing **School** tab and the admin-facing
+school detail page — also has its own **"Copy invite link"** button per pending row, matching the
+fallback the athlete bulk-invite screen already had. Built from the shared
+`acceptInviteUrl(token)` helper ([`lib/format.ts`](frontend/src/lib/format.ts)) so both pages
+construct the exact same URL shape; a real gap before this, since without a configured email
+provider a coach previously had no way at all to hand a coach-to-school invite link to anyone.
 
 ### Super admin
 
@@ -401,7 +438,12 @@ file — `generateSW` only lets you configure caching rules, not add arbitrary e
   / `icon-512.png` for normal display, plus dedicated `icon-maskable-*.png` variants (content scaled
   to ~70% and centered) for Android's adaptive-icon masking, and `apple-touch-icon.png` (180×180,
   no baked-in rounding) since iOS ignores the manifest's icon list entirely and only ever reads the
-  `<link rel="apple-touch-icon">` in `index.html`.
+  `<link rel="apple-touch-icon">` in `index.html`. All of these are generated from the source
+  artwork by trimming to its actual content bounding box and recompositing onto a same-size canvas
+  at a *vertically* centered position (background color sampled from the source image's own corner
+  pixel) — the source art itself sits noticeably closer to the bottom than the top, which every icon
+  file inherited until this fix; the `icon-maskable-*` variants had the exact same lopsided crop and
+  were the last two still needing it.
 - **Service worker** — [`frontend/src/sw.ts`](frontend/src/sw.ts), built by the same Vite/Rollup
   pipeline as the app itself (not a hand-copied static file), then registered by
   `vite-plugin-pwa`'s injected runtime. `precacheAndRoute(self.__WB_MANIFEST)` (Workbox) precaches
@@ -456,24 +498,28 @@ runs exactly as it did before this feature until that's done (see
   `"unconfigured"`. `POST`/`DELETE /api/me/push-subscription` (both roles, no `requireRole` --
   subscribing itself isn't role-specific) save/remove one device's row, scoped to the caller's own
   account.
-- **The daily reminders** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
-  `sendCheckinReminders`, scheduled **twice a day, at 4:00 PM and 7:00 PM America/Chicago (Central
-  time)**, by two separate `node-cron` jobs in [`src/index.ts`](backend/src/index.ts) — each using
-  `node-cron`'s `timezone` option, not a hand-computed UTC hour, so both stay pinned to 4pm/7pm
-  Central wall-clock time across daylight saving changes. Scheduled in `index.ts`, not `app.ts`,
-  which every test file imports via supertest and deliberately has no side effects of its own — see
-  its own top-of-file comment. Each run finds every athlete with at least one subscription and no
-  check-in yet *today*, sends each of their devices a reminder, and deletes any subscription the
-  push service reports as `"gone"`. Both slots call the exact same function with the exact same
-  "no check-in yet today" condition — there's no separate "already reminded once today" state to
-  track, so the 7pm run is automatically a no-op for anyone who checked in (whether in response to
-  the 4pm nudge or on their own) any time before it fires, and only nudges again someone still
-  missing today's check-in. Coaches are never included -- the query only ever joins through
-  `Athlete`, so a coach's own subscription (the Profile toggle is athlete-only, but the endpoint
-  itself doesn't enforce that) simply never matches, no special-casing needed. No per-athlete
-  timezone is tracked anywhere in this app, so these are two fixed clock times for everyone
-  regardless of where their team actually is -- the same simplification `dayKey`/
-  `resolveSubmissionDay` already make (see [Backdating](#backdating-a-check-in-or-run) above).
+- **The daily reminder** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
+  `sendCheckinReminders`, scheduled once a day at **4:00 PM America/Chicago (Central time)** by a
+  `node-cron` job in [`src/index.ts`](backend/src/index.ts) — `node-cron`'s `timezone` option, not a
+  hand-computed UTC hour, so it stays pinned to 4pm Central wall-clock time across daylight saving
+  changes. Scheduled in `index.ts`, not `app.ts`, which every test file imports via supertest and
+  deliberately has no side effects of its own — see its own top-of-file comment. Finds every
+  athlete with at least one subscription and no check-in yet *today*, sends each of their devices a
+  reminder, and deletes any subscription the push service reports as `"gone"`. Coaches are never
+  included -- the query only ever joins through `Athlete`, so a coach's own subscription (the
+  Profile toggle is athlete-only, but the endpoint itself doesn't enforce that) simply never
+  matches, no special-casing needed. No per-athlete timezone is tracked anywhere in this app, so
+  this is one fixed clock time for everyone regardless of where their team actually is -- the same
+  simplification `dayKey`/`resolveSubmissionDay` already make (see
+  [Backdating](#backdating-a-check-in-or-run) above). There used to be a second run at 7pm, for
+  anyone still missing a check-in by evening — removed in favor of the coach-initiated nudge below,
+  a better fit than blanket-repinging the whole roster a second time every day.
+- **Coach-initiated nudge** — `POST /api/athletes/:id/nudge` (coach + roster scoped), a "Nudge to
+  check in" button on an athlete's detail drawer (shown only when they haven't checked in yet
+  today). Reuses the exact same "hasn't checked in yet today" gate and `trySendPush`/prune-on-`"gone"`
+  pattern as the daily reminder — 400s with a clear reason if the athlete already checked in or has
+  no device subscribed, so a coach always gets real feedback instead of a button that silently does
+  nothing.
 - **Service worker** — the actual reason `injectManifest` (not the simpler `generateSW`) was picked
   for the whole [PWA setup](#progressive-web-app) in the first place: `push` and `notificationclick`
   handlers in [`src/sw.ts`](frontend/src/sw.ts) show the OS notification and deep-link to `/checkin`
@@ -722,6 +768,14 @@ This backend side (`routes/injuries.ts`) already existed and was already fully t
 was purely that no frontend UI ever called `POST`/`PATCH /api/injuries`, so there was genuinely no
 way to log one before this.
 
+`RESOLVED` injuries are never deleted from the DB, but both the **Injuries** page and an athlete's
+detail drawer used to filter them out entirely — a cleared injury simply vanished from view with no
+way to see it again. Both now surface that history: the Injuries page has a collapsible "Show
+resolved injuries (N)" panel below the active list, and the detail drawer lists a short "✓ Cleared"
+line (with the date range) under INJURY STATUS for each of that athlete's past injuries. Purely a
+frontend change — no new endpoint, both pages already had the full `injuries` array in hand and
+were just throwing the resolved ones away client-side.
+
 ### Check-in rate — coach and admin, roster/school-scoped
 
 A small stat, not a calendar: "X% checked in today" plus a 7-day bar graph, backed by
@@ -958,9 +1012,11 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/admin/activity/checkins` \| `/runs` \| `/coach-logins` | Zero-filled daily activity counts, `?days=` (default 90, max 400) (super admin only) |
 | GET | `/api/squads` | Squads with counts, scoped to the coach's roster |
 | GET | `/api/squads/:id/athletes` | Coach's roster athletes in a squad |
+| GET | `/api/squads/:id/checkin-rate?days=` | Zero-filled daily check-in-rate series for a squad's roster (default 7 days), see [Check-in rate](#check-in-rate--coach-and-admin-rosterschool-scoped) |
 | GET | `/api/athletes/:id` | Athlete detail (coach-on-roster or the athlete themself) |
 | GET | `/api/athletes/:id/readiness-history` | Readiness score history |
 | GET | `/api/athletes/:id/stats` | Always-visible session stats + phase-gated workload/ACWR numbers |
+| POST | `/api/athletes/:id/nudge` | Push-notify one athlete who hasn't checked in yet today (coach, roster-scoped; 503 if push isn't configured, 400 if they already checked in or have no device) — see [Push notifications](#push-notifications) |
 | DELETE | `/api/athletes/:id/roster` | Remove an athlete from the active roster (coach only) — history/account untouched, see [above](#removing-an-athlete-from-the-roster) |
 | GET | `/api/brief?week=&year=&squadId=` | Weekly brief, ranked worst-first, roster-scoped |
 | PATCH | `/api/brief/:id/talked-to` | Mark/clear "talked to this athlete" on one week's readiness score (`{talked: boolean}`, coach must be on that athlete's roster) — see ["Fit them into your week"](#fit-them-into-your-week) |

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Invite } from "../lib/api";
+import { acceptInviteUrl } from "../lib/format";
 
 const STATUS_META: Record<Invite["status"], { label: string; color: string }> = {
   PENDING: { label: "Waiting", color: "#d9a53c" },
@@ -12,10 +13,6 @@ function parseEmails(raw: string): string[] {
     .split(/[\n,]/)
     .map((e) => e.trim())
     .filter(Boolean);
-}
-
-function acceptUrl(token: string): string {
-  return `${window.location.origin}/accept-invite/${token}`;
 }
 
 export function CoachInvites() {
@@ -62,7 +59,7 @@ export function CoachInvites() {
 
   async function copyLink(inv: Invite) {
     try {
-      await navigator.clipboard.writeText(acceptUrl(inv.token));
+      await navigator.clipboard.writeText(acceptInviteUrl(inv.token));
       setCopiedId(inv.id);
       setTimeout(() => setCopiedId((current) => (current === inv.id ? null : current)), 2000);
     } catch {

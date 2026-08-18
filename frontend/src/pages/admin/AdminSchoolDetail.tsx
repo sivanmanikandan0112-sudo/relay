@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type AdminSchoolDetail as AdminSchoolDetailData } from "../../lib/api";
 import { BarChart } from "../../components/BarChart";
+import { acceptInviteUrl } from "../../lib/format";
 
 const SQUAD_LABEL: Record<string, string> = { GIRLS: "Girls", BOYS: "Boys" };
 
@@ -14,6 +15,18 @@ export function AdminSchoolDetail() {
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  async function copyInviteLink(inv: { id: string; token: string }) {
+    try {
+      await navigator.clipboard.writeText(acceptInviteUrl(inv.token));
+      setCopiedInviteId(inv.id);
+      setTimeout(() => setCopiedInviteId((current) => (current === inv.id ? null : current)), 2000);
+    } catch {
+      setCopyError("Couldn't copy to clipboard — copy the link manually instead.");
+    }
+  }
 
   function refresh() {
     if (!id) return;
@@ -30,7 +43,11 @@ export function AdminSchoolDetail() {
     setInviteFeedback(null);
     try {
       const res = await api.inviteCoachToSchool(id, inviteEmail.trim());
-      setInviteFeedback(res.emailSent ? `Emailed an invite to ${res.invite.email}` : `Invite created for ${res.invite.email}`);
+      setInviteFeedback(
+        res.emailSent
+          ? `Emailed an invite to ${res.invite.email}`
+          : `Invite created for ${res.invite.email} — copy the link below to share it`
+      );
       setInviteEmail("");
       refresh();
     } catch (err) {
@@ -145,15 +162,31 @@ export function AdminSchoolDetail() {
       {pendingInvites.length > 0 && (
         <div className="panel">
           <h2>Pending coach invites</h2>
+          {copyError && (
+            <p className="error" style={{ marginBottom: 8 }}>
+              {copyError}
+            </p>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {pendingInvites.map((inv) => (
-              <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <div className="run-row">
-                  <span className="run-type">{inv.email}</span>
-                  <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : "Rejected"}</span>
+            {pendingInvites.map((inv) => {
+              const expired = new Date(inv.expiresAt) < new Date();
+              return (
+                <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
+                  <div className="run-row">
+                    <span className="run-type">{inv.email}</span>
+                    <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : "Rejected"}</span>
+                  </div>
+                  {inv.status === "PENDING" && !expired && (
+                    <div className="run-row" style={{ marginTop: 8 }}>
+                      <span className="run-meta">Link expires {new Date(inv.expiresAt).toLocaleDateString()}</span>
+                      <button className="btn-secondary" onClick={() => copyInviteLink(inv)}>
+                        {copiedInviteId === inv.id ? "Copied!" : "Copy invite link"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

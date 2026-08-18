@@ -9,7 +9,7 @@ import {
   type WellnessEntry,
 } from "../lib/api";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
-import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, withinLastDays } from "../lib/format";
+import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, todayKey, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
 import { InjuryModal } from "./InjuryModal";
 import { AthleteStats } from "./AthleteStats";
@@ -42,6 +42,8 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
   const [injuryModalOpen, setInjuryModalOpen] = useState(false);
   const [injuryUpdating, setInjuryUpdating] = useState(false);
   const [injuryError, setInjuryError] = useState<string | null>(null);
+  const [nudging, setNudging] = useState(false);
+  const [nudgeFeedback, setNudgeFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   // --- Remove from roster ------------------------------------------
   const [removeConfirming, setRemoveConfirming] = useState(false);
@@ -73,6 +75,19 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
     }
   }
 
+  async function handleNudge() {
+    setNudging(true);
+    setNudgeFeedback(null);
+    try {
+      const res = await api.nudgeAthlete(athleteId);
+      setNudgeFeedback({ ok: true, text: res.sent > 0 ? "Nudge sent." : "Sent, but their device may no longer be reachable." });
+    } catch (err) {
+      setNudgeFeedback({ ok: false, text: err instanceof Error ? err.message : "Couldn't send a nudge" });
+    } finally {
+      setNudging(false);
+    }
+  }
+
   async function handleRemove() {
     setRemoveError(null);
     setRemoving(true);
@@ -89,6 +104,7 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
   if (!athlete) return null;
 
   const openInjury = athlete.injuries.find((i) => i.status !== "RESOLVED");
+  const resolvedInjuries = athlete.injuries.filter((i) => i.status === "RESOLVED");
 
   const latest = history[history.length - 1];
   const prev = history[history.length - 2];
@@ -107,6 +123,7 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
   const lastWeekWellness = wellness.filter((w) => withinLastDays(w.date, 7));
   const lastWeekRuns = runs.filter((r) => withinLastDays(r.date, 7));
   const messages = lastWeekWellness.filter((w) => w.msg);
+  const checkedInToday = wellness.some((w) => w.day.slice(0, 10) === todayKey());
 
   return (
     <>
@@ -128,6 +145,17 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
           {latest && (
             <div className="drawer-plain" style={{ background: "#12140b", border: "1px solid #3a3f1e", borderLeft: "3px solid #d9703f" }}>
               {latest.summary}
+            </div>
+          )}
+
+          {!checkedInToday && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+              <button className="btn-secondary" disabled={nudging} onClick={handleNudge}>
+                {nudging ? "Sending…" : "Nudge to check in"}
+              </button>
+              {nudgeFeedback && (
+                <span style={{ fontSize: 12, color: nudgeFeedback.ok ? "#4ea373" : "var(--red)" }}>{nudgeFeedback.text}</span>
+              )}
             </div>
           )}
 
@@ -286,6 +314,16 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
             </div>
           ) : (
             <div className="drawer-legend">No open injury on record.</div>
+          )}
+          {resolvedInjuries.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {resolvedInjuries.map((i) => (
+                <div key={i.id} className="drawer-legend" style={{ fontSize: 10.5 }}>
+                  ✓ Cleared {new Date(i.startDate).toLocaleDateString()}
+                  {i.endDate ? `–${new Date(i.endDate).toLocaleDateString()}` : ""} — {i.description}
+                </div>
+              ))}
+            </div>
           )}
 
           <div className="drawer-section-label">

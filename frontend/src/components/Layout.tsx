@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Squad } from "../lib/api";
+import { currentIsoWeek } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
 import { GenderGate } from "./GenderGate";
 import { NoCoachNotice } from "./NoCoachNotice";
@@ -20,14 +21,6 @@ const ATH_TABS = [
   { to: "/runs", label: "My Runs" },
   { to: "/athlete-guide", label: "How it works" },
 ];
-
-function currentIsoWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
 
 export function Layout() {
   const { user, logout } = useAuth();

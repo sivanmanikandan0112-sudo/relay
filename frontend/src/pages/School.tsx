@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type Gender, type SchoolDetail, type SchoolJoinRequestSummary } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { acceptInviteUrl } from "../lib/format";
 
 // Same labels as GenderGate.tsx's own options.
 const GENDER_LABEL: Record<Gender, string> = {
@@ -39,6 +40,17 @@ export function School() {
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
   const [resentInviteId, setResentInviteId] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+
+  async function copyInviteLink(inv: { id: string; token: string }) {
+    try {
+      await navigator.clipboard.writeText(acceptInviteUrl(inv.token));
+      setCopiedInviteId(inv.id);
+      setTimeout(() => setCopiedInviteId((current) => (current === inv.id ? null : current)), 2000);
+    } catch {
+      setResendError("Couldn't copy to clipboard — copy the link manually instead.");
+    }
+  }
 
   function refresh() {
     api.mySchool().then((res) => setSchool(res.school));
@@ -166,7 +178,11 @@ export function School() {
     setInviteFeedback(null);
     try {
       const res = await api.inviteCoachToSchool(school.id, inviteEmail.trim());
-      setInviteFeedback(res.emailSent ? `Emailed an invite to ${res.invite.email}` : `Invite created for ${res.invite.email}`);
+      setInviteFeedback(
+        res.emailSent
+          ? `Emailed an invite to ${res.invite.email}`
+          : `Invite created for ${res.invite.email} — copy the link below to share it`
+      );
       setInviteEmail("");
       refresh();
     } catch (err) {
@@ -444,17 +460,24 @@ export function School() {
                           ? `Link expired ${new Date(inv.expiresAt).toLocaleDateString()}`
                           : `Link expires ${new Date(inv.expiresAt).toLocaleDateString()}`}
                       </span>
-                      <button
-                        className="btn-secondary"
-                        disabled={resendingInviteId === inv.id}
-                        onClick={() => handleResendInvite(inv.id)}
-                      >
-                        {resendingInviteId === inv.id
-                          ? "Resending…"
-                          : resentInviteId === inv.id
-                            ? "Resent!"
-                            : "Resend"}
-                      </button>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {!expired && (
+                          <button className="btn-secondary" onClick={() => copyInviteLink(inv)}>
+                            {copiedInviteId === inv.id ? "Copied!" : "Copy invite link"}
+                          </button>
+                        )}
+                        <button
+                          className="btn-secondary"
+                          disabled={resendingInviteId === inv.id}
+                          onClick={() => handleResendInvite(inv.id)}
+                        >
+                          {resendingInviteId === inv.id
+                            ? "Resending…"
+                            : resentInviteId === inv.id
+                              ? "Resent!"
+                              : "Resend"}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
