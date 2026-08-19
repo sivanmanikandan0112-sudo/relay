@@ -68,6 +68,8 @@ export const api = {
     }),
   setReadinessVisibility: (share: boolean) =>
     request<{ shared: boolean }>("/me/readiness-visibility", { method: "PATCH", body: JSON.stringify({ share }) }),
+  setReminderHour: (hour: number | null) =>
+    request<{ reminderHour: number | null; default: number }>("/me/reminder-hour", { method: "PATCH", body: JSON.stringify({ hour }) }),
   myReadiness: () => request<{ shared: boolean; latest: ReadinessScoreRecord | null }>("/me/readiness"),
   linkGoogle: (idToken: string) => request<{ linked: boolean }>("/me/google-link", { method: "POST", body: JSON.stringify({ idToken }) }),
   unlinkGoogle: () => request<{ linked: boolean }>("/me/google-link", { method: "DELETE" }),
@@ -211,6 +213,7 @@ export interface AuthUser {
   isSuperAdmin?: boolean;
   mfaEnabled?: boolean;
   googleLinked?: boolean;
+  reminderHour?: number | null;
 }
 
 export interface AdminUserSummary {

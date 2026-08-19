@@ -3,8 +3,16 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { renderGoogleButton } from "../lib/google";
 import { PUSH_CONFIGURED, getExistingSubscription, pushSupported, subscribeToPush, unsubscribeFromPush } from "../lib/push";
+import { formatHour } from "../lib/format";
 
 const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
+// Mirrors backend's lib/pushReminder.ts DEFAULT_REMINDER_HOUR -- the
+// fallback hour once neither an athlete nor any of their coaches has set
+// a preference, shown here purely as display copy ("Same as your coach's
+// default (4:00 PM)"), never sent back to the server itself (the server
+// is the one source of truth for what "no preference set" resolves to).
+const DEFAULT_REMINDER_HOUR = 16;
+const REMINDER_HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 
 export function Profile() {
   const { user, updateUser } = useAuth();
@@ -42,6 +50,11 @@ export function Profile() {
   const [pushChecked, setPushChecked] = useState(false);
   const [pushSaving, setPushSaving] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+
+  // --- Reminder hour (both roles -- athlete's own override, or a
+  // coach's default for their roster) -----------------------------------
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
 
   function refreshMfaStatus() {
     api.mfaStatus().then(setMfaStatus);
@@ -176,6 +189,20 @@ export function Profile() {
       setReadinessError(err instanceof Error ? err.message : "Couldn't save that");
     } finally {
       setReadinessSaving(false);
+    }
+  }
+
+  async function handleSetReminderHour(raw: string) {
+    const hour = raw === "" ? null : Number(raw);
+    setReminderError(null);
+    setReminderSaving(true);
+    try {
+      await api.setReminderHour(hour);
+      updateUser({ reminderHour: hour });
+    } catch (err) {
+      setReminderError(err instanceof Error ? err.message : "Couldn't save that");
+    } finally {
+      setReminderSaving(false);
     }
   }
 
@@ -333,6 +360,67 @@ export function Profile() {
           {pushError && (
             <p className="error" style={{ marginTop: 8 }}>
               {pushError}
+            </p>
+          )}
+
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, flexWrap: "wrap" }}>
+              Remind me at
+              <select
+                className="ath-input"
+                style={{ width: "auto" }}
+                value={user?.reminderHour ?? ""}
+                disabled={reminderSaving}
+                onChange={(e) => handleSetReminderHour(e.target.value)}
+              >
+                <option value="">Whatever your coach has set (currently {formatHour(DEFAULT_REMINDER_HOUR)})</option>
+                {REMINDER_HOUR_OPTIONS.map((h) => (
+                  <option key={h} value={h}>
+                    {formatHour(h)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p style={{ color: "var(--text-dim)", fontSize: 12, marginTop: 6 }}>
+              Your own choice always wins over your coach's default — set it here if the standard time doesn't work
+              for you.
+            </p>
+            {reminderError && (
+              <p className="error" style={{ marginTop: 8 }}>
+                {reminderError}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {user?.role === "COACH" && PUSH_CONFIGURED && (
+        <div className="panel">
+          <h2>Default reminder time for your team</h2>
+          <p style={{ color: "var(--text-dim)", fontSize: 13.5 }}>
+            The hour Relay reminds an athlete to check in, for anyone on your roster who hasn't picked their own time
+            from their own Profile. Doesn't send anything to you — this only sets the fallback for your athletes.
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, marginTop: 10, flexWrap: "wrap" }}>
+            Remind at
+            <select
+              className="ath-input"
+              style={{ width: "auto" }}
+              value={user?.reminderHour ?? ""}
+              disabled={reminderSaving}
+              onChange={(e) => handleSetReminderHour(e.target.value)}
+            >
+              <option value="">Relay's default ({formatHour(DEFAULT_REMINDER_HOUR)})</option>
+              {REMINDER_HOUR_OPTIONS.map((h) => (
+                <option key={h} value={h}>
+                  {formatHour(h)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {reminderError && (
+            <p className="error" style={{ marginTop: 8 }}>
+              {reminderError}
             </p>
           )}
         </div>

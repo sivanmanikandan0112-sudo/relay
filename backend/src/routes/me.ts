@@ -8,6 +8,7 @@ import { getOwnAthleteId } from "../lib/authz.js";
 import { GENDER_TO_SQUAD } from "../lib/gender.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import { pushEnabled } from "../lib/push.js";
+import { DEFAULT_REMINDER_HOUR, MAX_REMINDER_HOUR, MIN_REMINDER_HOUR } from "../lib/pushReminder.js";
 
 export const meRouter = Router();
 
@@ -52,6 +53,7 @@ meRouter.get("/", async (req, res) => {
     isSuperAdmin: user.isSuperAdmin,
     mfaEnabled: user.totpEnabled,
     googleLinked: !!user.googleId,
+    reminderHour: user.reminderHour,
   });
 });
 
@@ -154,6 +156,27 @@ meRouter.patch("/password", async (req, res) => {
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   res.json({ changed: true });
+});
+
+const reminderHourSchema = z.object({
+  hour: z.number().int().min(MIN_REMINDER_HOUR).max(MAX_REMINDER_HOUR).nullable(),
+});
+
+// Both roles, no requireRole -- same bare-requireAuth pattern as GET /
+// above. For an athlete this is their own personal override; for a coach
+// it's the default their athletes fall back to if they haven't set their
+// own (see lib/pushReminder.ts's effectiveReminderHour) -- a coach can
+// shift their whole team's reminder without every athlete individually
+// opting in. `hour: null` clears it back to "use the fallback" rather
+// than pinning it to today's DEFAULT_REMINDER_HOUR forever -- so a future
+// change to that default still reaches anyone who never set a preference.
+meRouter.patch("/reminder-hour", async (req, res) => {
+  const parsed = reminderHourSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  await prisma.user.update({ where: { id: req.user!.sub }, data: { reminderHour: parsed.data.hour } });
+  res.json({ reminderHour: parsed.data.hour, default: DEFAULT_REMINDER_HOUR });
 });
 
 const googleLinkSchema = z.object({ idToken: z.string().min(1) });

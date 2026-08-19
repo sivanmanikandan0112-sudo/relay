@@ -117,6 +117,60 @@ describe("PATCH /api/me/password", () => {
   });
 });
 
+describe("PATCH /api/me/reminder-hour", () => {
+  it("sets an hour for an athlete, and it's reflected back on GET /api/me", async () => {
+    await createAthlete({ username: "ath.reminder.set", firstName: "Sets", lastName: "Hour", squad: "GIRLS" });
+    const token = await loginAs("ath.reminder.set");
+
+    const res = await request(app)
+      .patch("/api/me/reminder-hour")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ hour: 20 });
+    expect(res.status).toBe(200);
+    expect(res.body.reminderHour).toBe(20);
+
+    const me = await request(app).get("/api/me").set("Authorization", `Bearer ${token}`);
+    expect(me.body.reminderHour).toBe(20);
+  });
+
+  it("works for a coach too -- their own roster's default, not a personal reminder", async () => {
+    await createCoach({ username: "coach.reminder.set", firstName: "Sets", lastName: "Hour" });
+    const token = await loginAs("coach.reminder.set");
+
+    const res = await request(app)
+      .patch("/api/me/reminder-hour")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ hour: 9 });
+    expect(res.status).toBe(200);
+    expect(res.body.reminderHour).toBe(9);
+  });
+
+  it("hour: null clears it back to unset", async () => {
+    await createAthlete({ username: "ath.reminder.clear", firstName: "Clears", lastName: "Hour", squad: "GIRLS" });
+    const token = await loginAs("ath.reminder.clear");
+    await request(app).patch("/api/me/reminder-hour").set("Authorization", `Bearer ${token}`).send({ hour: 20 });
+
+    const res = await request(app)
+      .patch("/api/me/reminder-hour")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ hour: null });
+    expect(res.status).toBe(200);
+    expect(res.body.reminderHour).toBeNull();
+
+    const me = await request(app).get("/api/me").set("Authorization", `Bearer ${token}`);
+    expect(me.body.reminderHour).toBeNull();
+  });
+
+  it("rejects an hour outside 0-23", async () => {
+    await createAthlete({ username: "ath.reminder.oor", firstName: "Out", lastName: "Range", squad: "GIRLS" });
+    const token = await loginAs("ath.reminder.oor");
+
+    expect((await request(app).patch("/api/me/reminder-hour").set("Authorization", `Bearer ${token}`).send({ hour: 24 })).status).toBe(400);
+    expect((await request(app).patch("/api/me/reminder-hour").set("Authorization", `Bearer ${token}`).send({ hour: -1 })).status).toBe(400);
+    expect((await request(app).patch("/api/me/reminder-hour").set("Authorization", `Bearer ${token}`).send({ hour: 4.5 })).status).toBe(400);
+  });
+});
+
 describe("readiness visibility (self-service, athlete-owned)", () => {
   it("defaults to off: GET /api/me reports readinessShared false, GET /api/me/readiness reports shared false with no score", async () => {
     const { athlete } = await createAthlete({ username: "ath.ready.default", firstName: "Ath", lastName: "Default", squad: "GIRLS" });

@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createAthlete, resetDb } from "../testDb.js";
+import { assignRoster, createAthlete, createCoach, resetDb } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { localDayKey } from "../../src/lib/date.js";
+
+// A fixed instant at exactly 4pm Central (DEFAULT_REMINDER_HOUR) -- most
+// of this file is testing subscription/checked-in-today eligibility, not
+// the hour-matching feature itself, so pinning `now` here keeps those
+// tests deterministic regardless of what hour they actually happen to
+// run at (an athlete with no reminderHour of their own, and no coach
+// with one either, always resolves to DEFAULT_REMINDER_HOUR).
+const FOUR_PM_CENTRAL = new Date("2026-08-17T21:00:00.000Z");
 
 // Same mocking approach as pushSubscription.test.ts -- pushEnabled forced
 // true (a real VAPID keypair can't exist in this test tier) and
@@ -29,7 +37,7 @@ describe("sendCheckinReminders", () => {
     const { user, athlete } = await createAthlete({ username: "ath.remind.due", firstName: "Due", lastName: "Athlete", squad: "GIRLS" });
     await subscribe(user!.id, "https://push.example.com/due");
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result).toEqual({ skipped: false, eligibleAthletes: 1, sent: 1, pruned: 0 });
     expect(mockTrySendPush).toHaveBeenCalledTimes(1);
     const [, payload] = mockTrySendPush.mock.calls[0];
@@ -41,10 +49,10 @@ describe("sendCheckinReminders", () => {
     const { user, athlete } = await createAthlete({ username: "ath.remind.done", firstName: "Done", lastName: "Athlete", squad: "GIRLS" });
     await subscribe(user!.id, "https://push.example.com/done");
     await prisma.wellnessEntry.create({
-      data: { athleteId: athlete.id, day: localDayKey(new Date()), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
+      data: { athleteId: athlete.id, day: localDayKey(FOUR_PM_CENTRAL), sleep: 3, soreness: 3, mood: 3, energy: 3, motivation: 3 },
     });
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result).toEqual({ skipped: false, eligibleAthletes: 0, sent: 0, pruned: 0 });
     expect(mockTrySendPush).not.toHaveBeenCalled();
   });
@@ -52,7 +60,7 @@ describe("sendCheckinReminders", () => {
   it("skips an athlete with no push subscription at all", async () => {
     await createAthlete({ username: "ath.remind.nosub", firstName: "NoSub", lastName: "Athlete", squad: "GIRLS" });
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result.eligibleAthletes).toBe(0);
     expect(mockTrySendPush).not.toHaveBeenCalled();
   });
@@ -62,7 +70,7 @@ describe("sendCheckinReminders", () => {
     await subscribe(user!.id, "https://push.example.com/phone");
     await subscribe(user!.id, "https://push.example.com/laptop");
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result).toEqual({ skipped: false, eligibleAthletes: 1, sent: 2, pruned: 0 });
   });
 
@@ -71,7 +79,7 @@ describe("sendCheckinReminders", () => {
     await subscribe(user!.id, "https://push.example.com/dead");
     mockTrySendPush.mockResolvedValueOnce("gone");
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result).toEqual({ skipped: false, eligibleAthletes: 1, sent: 0, pruned: 1 });
     expect(await prisma.pushSubscription.findUnique({ where: { endpoint: "https://push.example.com/dead" } })).toBeNull();
   });
@@ -81,7 +89,7 @@ describe("sendCheckinReminders", () => {
     await subscribe(user!.id, "https://push.example.com/flaky");
     mockTrySendPush.mockResolvedValueOnce("failed");
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result).toEqual({ skipped: false, eligibleAthletes: 1, sent: 0, pruned: 0 });
     expect(await prisma.pushSubscription.findUnique({ where: { endpoint: "https://push.example.com/flaky" } })).not.toBeNull();
   });
@@ -103,9 +111,55 @@ describe("sendCheckinReminders", () => {
     });
     await subscribe(coach.id, "https://push.example.com/coach-device");
 
-    const result = await sendCheckinReminders();
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
     expect(result.eligibleAthletes).toBe(0);
     expect(mockTrySendPush).not.toHaveBeenCalled();
+  });
+
+  it("skips an otherwise-eligible athlete whose effective hour doesn't match this run", async () => {
+    const { user } = await createAthlete({ username: "ath.remind.laterhour", firstName: "Later", lastName: "Hour", squad: "GIRLS" });
+    await subscribe(user!.id, "https://push.example.com/laterhour");
+    await prisma.user.update({ where: { id: user!.id }, data: { reminderHour: 20 } }); // 8pm, not 4pm
+
+    const result = await sendCheckinReminders(FOUR_PM_CENTRAL);
+    expect(result).toEqual({ skipped: false, eligibleAthletes: 0, sent: 0, pruned: 0 });
+    expect(mockTrySendPush).not.toHaveBeenCalled();
+  });
+
+  it("sends at an athlete's own chosen hour, once the run actually reaches it", async () => {
+    const { user } = await createAthlete({ username: "ath.remind.ownhour", firstName: "Own", lastName: "Hour", squad: "GIRLS" });
+    await subscribe(user!.id, "https://push.example.com/ownhour");
+    await prisma.user.update({ where: { id: user!.id }, data: { reminderHour: 20 } });
+
+    const eightPmCentral = new Date("2026-08-18T01:00:00.000Z");
+    const result = await sendCheckinReminders(eightPmCentral);
+    expect(result).toEqual({ skipped: false, eligibleAthletes: 1, sent: 1, pruned: 0 });
+  });
+
+  it("falls back to the coach's reminder hour when the athlete hasn't set their own", async () => {
+    const coach = await createCoach({ username: "coach.remind.evening", firstName: "Evening", lastName: "Coach" });
+    await prisma.user.update({ where: { id: coach.id }, data: { reminderHour: 20 } });
+    const { user, athlete } = await createAthlete({ username: "ath.remind.coachhour", firstName: "Coach", lastName: "Default", squad: "GIRLS" });
+    await assignRoster(coach.id, athlete.id);
+    await subscribe(user!.id, "https://push.example.com/coachhour");
+
+    // Not yet 8pm -- the coach's own hour, not this athlete's (unset).
+    expect((await sendCheckinReminders(FOUR_PM_CENTRAL)).sent).toBe(0);
+
+    const eightPmCentral = new Date("2026-08-18T01:00:00.000Z");
+    expect((await sendCheckinReminders(eightPmCentral)).sent).toBe(1);
+  });
+
+  it("an athlete's own hour wins over their coach's, even if the coach's would already match", async () => {
+    const coach = await createCoach({ username: "coach.remind.overridden", firstName: "Overridden", lastName: "Coach" });
+    await prisma.user.update({ where: { id: coach.id }, data: { reminderHour: 16 } }); // matches FOUR_PM_CENTRAL
+    const { user, athlete } = await createAthlete({ username: "ath.remind.override", firstName: "Overrides", lastName: "Coach", squad: "GIRLS" });
+    await assignRoster(coach.id, athlete.id);
+    await prisma.user.update({ where: { id: user!.id }, data: { reminderHour: 20 } }); // athlete wants 8pm instead
+    await subscribe(user!.id, "https://push.example.com/override");
+
+    // Coach's 4pm doesn't fire this athlete's reminder -- their own 8pm wins.
+    expect((await sendCheckinReminders(FOUR_PM_CENTRAL)).sent).toBe(0);
   });
 });
 

@@ -54,6 +54,24 @@ export function localDayKey(date: Date): Date {
 }
 
 /**
+ * The hour (0-23) America/Chicago's wall clock reads at this instant --
+ * same reference timezone as localDayKey, just the hour component instead
+ * of the day. Backs the configurable per-athlete/per-coach reminder hour
+ * (User.reminderHour, see lib/pushReminder.ts) -- the hourly cron in
+ * index.ts calls this once per run and only sends to whoever's own
+ * effective hour matches it.
+ *
+ * `hourCycle: "h23"` is deliberate, not `hour12: false` -- some JS
+ * engines' `hour12: false` still reports local midnight as "24" rather
+ * than "0" (an long-standing Intl quirk), which would make `Number(...)`
+ * parse to 24 and never match any of the 0-23 hours this app actually
+ * offers. `h23` is unambiguous by definition.
+ */
+export function localHour(date: Date): number {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(date));
+}
+
+/**
  * Buckets a chronologically-sorted list of items by calendar day (via
  * dayKey by default, or a caller-supplied keyFn -- e.g. localDayKey, for
  * data with no pre-resolved local-day field to group on directly, like

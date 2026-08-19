@@ -91,6 +91,17 @@ model User {
   // bypasses the athlete-invite flow; see routes/me.ts's
   // POST/DELETE /google-link and routes/auth.ts's POST /auth/google.
   googleId             String? @unique
+  // Self-service, both roles, optional. Hour of day (0-23, in the app's
+  // single reference timezone -- see lib/date.ts's localDayKey) the daily
+  // check-in-reminder push should fire. For an athlete, this is their own
+  // personal override; for a coach, it's the default their athletes fall
+  // back to if they haven't set their own (see lib/pushReminder.ts's
+  // effectiveReminderHour) -- covers a coach who wants their whole team
+  // reminded in the evening instead of the afternoon, without every
+  // individual athlete having to set it themselves. Null means "use
+  // whatever this athlete/coach falls back to" -- ultimately
+  // DEFAULT_REMINDER_HOUR if nobody in the chain has set one.
+  reminderHour  Int?
   athlete       Athlete?
   notes         Note[]
   coachAthletes CoachAthlete[]

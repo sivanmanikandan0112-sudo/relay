@@ -147,3 +147,12 @@ export function formatPace(minPerMile: number): string {
   const s = totalSeconds % 60;
   return `${m}:${String(s).padStart(2, "0")}/mi`;
 }
+
+// Hour-of-day (0-23) -> "4:00 PM", for the reminder-hour picker on
+// Profile.tsx. Mirrors backend's User.reminderHour -- an on-the-hour
+// value, no minutes, so this always renders ":00".
+export function formatHour(hour: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve}:00 ${period}`;
+}

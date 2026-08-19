@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKDATE_WINDOW_DAYS, dayKey, groupByDay, localDayKey, resolveSubmissionDay } from "./date.js";
+import { BACKDATE_WINDOW_DAYS, dayKey, groupByDay, localDayKey, localHour, resolveSubmissionDay } from "./date.js";
 
 describe("dayKey", () => {
   it("truncates to UTC midnight", () => {
@@ -30,6 +30,21 @@ describe("localDayKey", () => {
     const winterEvening = new Date("2026-01-15T01:00:00.000Z");
     expect(dayKey(winterEvening).toISOString()).toBe("2026-01-15T00:00:00.000Z");
     expect(localDayKey(winterEvening).toISOString()).toBe("2026-01-14T00:00:00.000Z");
+  });
+});
+
+describe("localHour", () => {
+  it("reads the Central hour, not the UTC hour", () => {
+    expect(localHour(new Date("2026-08-17T21:00:00.000Z"))).toBe(16); // 4pm CDT
+  });
+
+  it("reads midnight as 0, not 24 (the h23 vs hour12 Intl quirk)", () => {
+    expect(localHour(new Date("2026-08-17T05:00:00.000Z"))).toBe(0); // exactly midnight CDT
+  });
+
+  it("shifts an hour across the CDT/CST boundary, same instant", () => {
+    expect(localHour(new Date("2026-08-17T20:00:00.000Z"))).toBe(15); // 3pm CDT (summer, UTC-5)
+    expect(localHour(new Date("2026-01-17T20:00:00.000Z"))).toBe(14); // 2pm CST (winter, UTC-6)
   });
 });
 

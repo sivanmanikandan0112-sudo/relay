@@ -546,22 +546,41 @@ runs exactly as it did before this feature until that's done (see
   `"unconfigured"`. `POST`/`DELETE /api/me/push-subscription` (both roles, no `requireRole` --
   subscribing itself isn't role-specific) save/remove one device's row, scoped to the caller's own
   account.
-- **The daily reminder** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
-  `sendCheckinReminders`, scheduled once a day at **4:00 PM America/Chicago (Central time)** by a
-  `node-cron` job in [`src/index.ts`](backend/src/index.ts) — `node-cron`'s `timezone` option, not a
-  hand-computed UTC hour, so it stays pinned to 4pm Central wall-clock time across daylight saving
-  changes. Scheduled in `index.ts`, not `app.ts`, which every test file imports via supertest and
-  deliberately has no side effects of its own — see its own top-of-file comment. Finds every
-  athlete with at least one subscription and no check-in yet *today*, sends each of their devices a
-  reminder, and deletes any subscription the push service reports as `"gone"`. Coaches are never
-  included -- the query only ever joins through `Athlete`, so a coach's own subscription (the
-  Profile toggle is athlete-only, but the endpoint itself doesn't enforce that) simply never
-  matches, no special-casing needed. No per-athlete timezone is tracked anywhere in this app, so
-  this is one fixed clock time for everyone regardless of where their team actually is -- the same
-  simplification `dayKey`/`resolveSubmissionDay` already make (see
-  [Backdating](#backdating-a-check-in-or-run) above). There used to be a second run at 7pm, for
-  anyone still missing a check-in by evening — removed in favor of the coach-initiated nudge below,
-  a better fit than blanket-repinging the whole roster a second time every day.
+- **The daily reminder, at a configurable hour** — [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s
+  `sendCheckinReminders`, driven by a `node-cron` job in [`src/index.ts`](backend/src/index.ts) that
+  fires **every hour, on the hour, America/Chicago** (`node-cron`'s `timezone` option, not a
+  hand-computed UTC hour, so "on the hour" stays pinned to Central wall-clock hours across daylight
+  saving changes) — not the single fixed 4pm slot this used to be. Each run finds every athlete with
+  at least one subscription and no check-in yet *today*, computes their own *effective* reminder
+  hour, and only actually sends to whoever's effective hour matches the hour this run is firing
+  at — most runs match nobody, which is expected, not a bug. `User.reminderHour` (nullable `Int`,
+  0-23, self-service via **My Profile**, `PATCH /api/me/reminder-hour`) is both roles' knob on the
+  same field, read differently depending on who set it:
+  - An **athlete's** own `reminderHour`, if they've set one, always wins outright.
+  - Otherwise, the **earliest** `reminderHour` set by any coach on their roster (a school-shared
+    roster can have several coaches with different preferences — earliest means nobody's reminder
+    ever arrives *later* than a coach wanted, only ever earlier) — a coach's own Profile page frames
+    this as "default reminder time for your team," not a personal reminder, since coaches are never
+    the ones who get pushed.
+  - Otherwise, `DEFAULT_REMINDER_HOUR` (4pm) — the original fixed behavior, now just the fallback
+    once nobody in the chain has expressed a preference, not the only option.
+
+  [`lib/pushReminder.ts`](backend/src/lib/pushReminder.ts)'s `effectiveReminderHour` is the pure
+  function this resolution runs through, and [`lib/date.ts`](backend/src/lib/date.ts)'s `localHour`
+  is what tells each hourly run what hour it actually is right now, Central time (same
+  `Intl.DateTimeFormat`-based approach as `localDayKey`, just the hour component instead of the
+  day). Deletes any subscription the push service reports as `"gone"`, same as before. Coaches are
+  never sent a reminder themselves — the query only ever joins through `Athlete`, so a coach's own
+  subscription (the push toggle itself is athlete-only in the UI, but the endpoint doesn't enforce
+  that) simply never matches; their `reminderHour` is only ever read as a fallback for their
+  athletes. Still no per-athlete *timezone* tracked anywhere in this app — this makes the *hour*
+  configurable within the app's single reference timezone (Central), not full per-user IANA
+  timezone support; a school in a different timezone entirely is still a future problem, not one
+  this closes.
+
+  There used to be a second fixed run at 7pm, for anyone still missing a check-in by evening —
+  removed in favor of the coach-initiated nudge below, a better fit than blanket-repinging the whole
+  roster a second time every day.
 - **Coach-initiated nudge** — `POST /api/athletes/:id/nudge` (coach + roster scoped), a "Nudge to
   check in" button on an athlete's detail drawer (shown only when they haven't checked in yet
   today). Reuses the exact same "hasn't checked in yet today" gate and `trySendPush`/prune-on-`"gone"`
@@ -864,6 +883,21 @@ deliberately still only shows an athlete *count*, not names, since a coach alrea
 of them individually via Brief/Dashboard; an admin has no equivalent squad view to fall back on,
 so this was a real gap, not a deliberate omission being reversed.
 
+`AdminSchoolDetail.tsx`'s Athletes panel groups that list into **Girls/Boys sections** (each with
+its own count) instead of one flat list with a per-row squad label, matching how every other squad
+view in the app already separates the two.
+
+This same panel — and List rows across eight other pages (`School.tsx`, `CoachInvites.tsx`,
+`Injuries.tsx`, and five more admin pages) — had a real, longstanding CSS bug: every one of these
+rows used classes named `run-row`/`run-type`/`run-meta`, but only `run-item-row`/`run-item-type`/
+`run-item-meta` (missing the `-item-` infix) actually existed in `index.css`. The typo'd classes
+matched no rule at all, so every one of these rows rendered with no flex layout, no gap, and no
+font treatment — name and label text ran together with plain browser defaults (e.g. "Carter
+ColeBoys"). Several call sites had even compensated by hand, adding an inline `padding` override on
+the outer `.run-item` wrapper to get *some* spacing back, without ever finding the real cause —
+removed now that the correct classes supply their own padding, to avoid doubling it up. Fixed by
+renaming every occurrence to the classes that actually exist.
+
 ### An accepted coach invite no longer also lingers in "Pending coach invites"
 
 Both `School.tsx` (coach-facing) and `AdminSchoolDetail.tsx` (admin-facing) used to keep showing
@@ -1055,6 +1089,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | GET | `/api/me/readiness` | Athlete only: your current readiness if you've opted in (`{shared: false, latest: null}` otherwise) |
 | POST | `/api/me/push-subscription` | Save this device's Web Push subscription (both roles; 503 if VAPID isn't configured) |
 | DELETE | `/api/me/push-subscription` | Remove this device's subscription (scoped to your own account) |
+| PATCH | `/api/me/reminder-hour` | Set (0-23) or clear (`null`) your check-in-reminder hour — your own for an athlete, your roster's default for a coach; see [Push notifications](#push-notifications) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
 | POST | `/api/mfa/setup` | Generate a pending TOTP secret + QR code (not yet enabled) |
 | POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |
