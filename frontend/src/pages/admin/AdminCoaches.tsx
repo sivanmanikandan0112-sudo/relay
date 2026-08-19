@@ -24,14 +24,14 @@ export function AdminCoaches() {
               key={c.id}
               to={`/admin/coaches/${c.id}`}
               className="run-item"
-              style={{ padding: "12px 16px", textDecoration: "none", color: "inherit", display: "block" }}
+              style={{ textDecoration: "none", color: "inherit", display: "block" }}
             >
-              <div className="run-row">
-                <span className="run-type">{c.name}</span>
+              <div className="run-item-row">
+                <span className="run-item-type">{c.name}</span>
                 <span className="injury-pill">{c.athleteCount} athlete{c.athleteCount === 1 ? "" : "s"}</span>
               </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">
+              <div className="run-item-row" style={{ marginTop: 4 }}>
+                <span className="run-item-meta">
                   {c.email} · {c.schoolName ?? "solo (no school)"}
                   {c.isSuperAdmin ? " · super admin" : ""}
                 </span>

@@ -161,18 +161,18 @@ export function Injuries() {
           {showResolved && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {resolved.map((injury) => (
-                <div key={injury.id} className="run-item" style={{ padding: "12px 16px" }}>
-                  <div className="run-row">
-                    <span className="run-type">{injury.athlete.name}</span>
+                <div key={injury.id} className="run-item">
+                  <div className="run-item-row">
+                    <span className="run-item-type">{injury.athlete.name}</span>
                     <span className="injury-pill" style={{ color: PILL.RESOLVED.color, borderColor: PILL.RESOLVED.border }}>
                       Cleared
                     </span>
                   </div>
-                  <div className="run-row" style={{ marginTop: 4 }}>
-                    <span className="run-meta">{injury.description}</span>
+                  <div className="run-item-row" style={{ marginTop: 4 }}>
+                    <span className="run-item-meta">{injury.description}</span>
                   </div>
-                  <div className="run-row" style={{ marginTop: 4 }}>
-                    <span className="run-meta">
+                  <div className="run-item-row" style={{ marginTop: 4 }}>
+                    <span className="run-item-meta">
                       {new Date(injury.startDate).toLocaleDateString()}
                       {injury.endDate ? ` – ${new Date(injury.endDate).toLocaleDateString()}` : ""}
                     </span>

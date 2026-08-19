@@ -37,17 +37,17 @@ export function AdminUsers() {
               key={u.id}
               to={`/admin/users/${u.id}`}
               className="run-item"
-              style={{ padding: "12px 16px", textDecoration: "none", color: "inherit", display: "block" }}
+              style={{ textDecoration: "none", color: "inherit", display: "block" }}
             >
-              <div className="run-row">
-                <span className="run-type">{u.name}</span>
+              <div className="run-item-row">
+                <span className="run-item-type">{u.name}</span>
                 <div style={{ display: "flex", gap: 6 }}>
                   <span className="injury-pill">{u.role === "COACH" ? "Coach" : "Athlete"}</span>
                   {u.mfaEnabled && <span className="injury-pill">2FA on</span>}
                 </div>
               </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">
+              <div className="run-item-row" style={{ marginTop: 4 }}>
+                <span className="run-item-meta">
                   {u.email} · {u.schoolName ?? (u.role === "COACH" ? "solo (no school)" : "—")}
                   {u.isSuperAdmin ? " · super admin" : ""}
                 </span>

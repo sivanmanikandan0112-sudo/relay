@@ -43,10 +43,10 @@ export function AdminCoachDetail() {
         {coach.athletes.length === 0 && <p className="page-subtitle">No athletes visible to this coach yet.</p>}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {coach.athletes.map((a) => (
-            <div key={a.id} className="run-item" style={{ padding: "12px 16px" }}>
-              <div className="run-row">
-                <span className="run-type">{a.name}</span>
-                <span className="run-meta">{SQUAD_LABEL[a.squadName] ?? a.squadName}</span>
+            <div key={a.id} className="run-item">
+              <div className="run-item-row">
+                <span className="run-item-type">{a.name}</span>
+                <span className="run-item-meta">{SQUAD_LABEL[a.squadName] ?? a.squadName}</span>
               </div>
             </div>
           ))}

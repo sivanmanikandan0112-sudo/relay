@@ -103,10 +103,10 @@ export function AdminUserDetail() {
           {(user.athletes?.length ?? 0) === 0 && <p className="page-subtitle">No athletes visible to this coach yet.</p>}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {user.athletes?.map((a) => (
-              <div key={a.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <div className="run-row">
-                  <span className="run-type">{a.name}</span>
-                  <span className="run-meta">{SQUAD_LABEL[a.squadName] ?? a.squadName}</span>
+              <div key={a.id} className="run-item">
+                <div className="run-item-row">
+                  <span className="run-item-type">{a.name}</span>
+                  <span className="run-item-meta">{SQUAD_LABEL[a.squadName] ?? a.squadName}</span>
                 </div>
               </div>
             ))}
@@ -118,8 +118,8 @@ export function AdminUserDetail() {
           {(user.coaches?.length ?? 0) === 0 && <p className="page-subtitle">Not on any coach's roster yet.</p>}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {user.coaches?.map((c) => (
-              <div key={c.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <span className="run-type">{c.name}</span>
+              <div key={c.id} className="run-item">
+                <span className="run-item-type">{c.name}</span>
               </div>
             ))}
           </div>

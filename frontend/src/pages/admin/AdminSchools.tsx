@@ -30,14 +30,14 @@ export function AdminSchools() {
               key={s.id}
               to={`/admin/schools/${s.id}`}
               className="run-item"
-              style={{ padding: "12px 16px", textDecoration: "none", color: "inherit", display: "block" }}
+              style={{ textDecoration: "none", color: "inherit", display: "block" }}
             >
-              <div className="run-row">
-                <span className="run-type">{s.name}</span>
+              <div className="run-item-row">
+                <span className="run-item-type">{s.name}</span>
                 <span className="injury-pill">{s.athleteCount} athlete{s.athleteCount === 1 ? "" : "s"}</span>
               </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">
+              <div className="run-item-row" style={{ marginTop: 4 }}>
+                <span className="run-item-meta">
                   {s.location ?? "no location on file"} · {s.coachCount} coach{s.coachCount === 1 ? "" : "es"}
                 </span>
               </div>

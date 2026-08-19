@@ -87,13 +87,13 @@ export function AdminSchoolDetail() {
         <h2>Coaches</h2>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {school.coaches.map((c) => (
-            <div key={c.id} className="run-item" style={{ padding: "12px 16px" }}>
-              <div className="run-row">
-                <span className="run-type">{c.name}</span>
+            <div key={c.id} className="run-item">
+              <div className="run-item-row">
+                <span className="run-item-type">{c.name}</span>
                 {c.isSuperAdmin && <span className="injury-pill">Super admin</span>}
               </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">{c.email}</span>
+              <div className="run-item-row" style={{ marginTop: 4 }}>
+                <span className="run-item-meta">{c.email}</span>
               </div>
             </div>
           ))}
@@ -105,16 +105,26 @@ export function AdminSchoolDetail() {
           Athletes ({school.athletes.length})
         </h2>
         {school.athletes.length === 0 && <p className="page-subtitle">No athletes on this school's roster yet.</p>}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {school.athletes.map((a) => (
-            <div key={a.id} className="run-item" style={{ padding: "12px 16px" }}>
-              <div className="run-row">
-                <span className="run-type">{a.name}</span>
-                <span className="run-meta">{SQUAD_LABEL[a.squadName] ?? a.squadName}</span>
+        {(["GIRLS", "BOYS"] as const).map((squad) => {
+          const inSquad = school.athletes.filter((a) => a.squadName === squad);
+          if (inSquad.length === 0) return null;
+          return (
+            <div key={squad} style={{ marginBottom: squad === "GIRLS" ? 18 : 0 }}>
+              <div className="field-hint" style={{ margin: "0 0 8px" }}>
+                {SQUAD_LABEL[squad].toUpperCase()} ({inSquad.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {inSquad.map((a) => (
+                  <div key={a.id} className="run-item">
+                    <div className="run-item-row">
+                      <span className="run-item-type">{a.name}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       <div className="panel">
@@ -171,14 +181,14 @@ export function AdminSchoolDetail() {
             {pendingInvites.map((inv) => {
               const expired = new Date(inv.expiresAt) < new Date();
               return (
-                <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
-                  <div className="run-row">
-                    <span className="run-type">{inv.email}</span>
+                <div key={inv.id} className="run-item">
+                  <div className="run-item-row">
+                    <span className="run-item-type">{inv.email}</span>
                     <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : "Rejected"}</span>
                   </div>
                   {inv.status === "PENDING" && !expired && (
-                    <div className="run-row" style={{ marginTop: 8 }}>
-                      <span className="run-meta">Link expires {new Date(inv.expiresAt).toLocaleDateString()}</span>
+                    <div className="run-item-row" style={{ marginTop: 8 }}>
+                      <span className="run-item-meta">Link expires {new Date(inv.expiresAt).toLocaleDateString()}</span>
                       <button className="btn-secondary" onClick={() => copyInviteLink(inv)}>
                         {copiedInviteId === inv.id ? "Copied!" : "Copy invite link"}
                       </button>

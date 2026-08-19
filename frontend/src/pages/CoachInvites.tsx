@@ -142,15 +142,15 @@ export function CoachInvites() {
             const meta = STATUS_META[inv.status];
             const expired = new Date(inv.expiresAt) < new Date();
             return (
-              <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <div className="run-row">
-                  <span className="run-type">{inv.email}</span>
+              <div key={inv.id} className="run-item">
+                <div className="run-item-row">
+                  <span className="run-item-type">{inv.email}</span>
                   <span className="injury-pill" style={{ color: meta.color, borderColor: meta.color }}>
                     {meta.label}
                   </span>
                 </div>
-                <div className="run-row" style={{ marginTop: 8 }}>
-                  <span className="run-meta">Sent {new Date(inv.createdAt).toLocaleDateString()}</span>
+                <div className="run-item-row" style={{ marginTop: 8 }}>
+                  <span className="run-item-meta">Sent {new Date(inv.createdAt).toLocaleDateString()}</span>
                   {(inv.status === "PENDING" || inv.status === "ACCEPTED") && (
                     <div style={{ display: "flex", gap: 8 }}>
                       {inv.status === "PENDING" && !expired && (

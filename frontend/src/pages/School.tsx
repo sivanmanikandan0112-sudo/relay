@@ -322,15 +322,15 @@ export function School() {
         <h2>Coaches</h2>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {school.coaches.map((c) => (
-            <div key={c.id} className="run-item" style={{ padding: "12px 16px" }}>
-              <div className="run-row">
-                <span className="run-type">
-                  {c.name} {c.id === user?.id && <span className="run-meta">(you)</span>}
+            <div key={c.id} className="run-item">
+              <div className="run-item-row">
+                <span className="run-item-type">
+                  {c.name} {c.id === user?.id && <span className="run-item-meta">(you)</span>}
                 </span>
                 {c.isSuperAdmin && <span className="injury-pill">Super admin</span>}
               </div>
-              <div className="run-row" style={{ marginTop: 4 }}>
-                <span className="run-meta">{c.email}</span>
+              <div className="run-item-row" style={{ marginTop: 4 }}>
+                <span className="run-item-meta">{c.email}</span>
               </div>
             </div>
           ))}
@@ -380,14 +380,14 @@ export function School() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {requests.map((r) => (
-              <div key={r.id} className="run-item" style={{ padding: "12px 16px" }}>
-                <div className="run-row">
-                  <span className="run-type">
-                    {r.firstName} {r.lastName} <span className="run-meta">({GENDER_LABEL[r.gender]})</span>
+              <div key={r.id} className="run-item">
+                <div className="run-item-row">
+                  <span className="run-item-type">
+                    {r.firstName} {r.lastName} <span className="run-item-meta">({GENDER_LABEL[r.gender]})</span>
                   </span>
                 </div>
-                <div className="run-row" style={{ marginTop: 4 }}>
-                  <span className="run-meta">
+                <div className="run-item-row" style={{ marginTop: 4 }}>
+                  <span className="run-item-meta">
                     {r.username} · {r.email}
                   </span>
                 </div>
@@ -448,14 +448,14 @@ export function School() {
             {pendingInvites.map((inv) => {
               const expired = new Date(inv.expiresAt) < new Date();
               return (
-                <div key={inv.id} className="run-item" style={{ padding: "12px 16px" }}>
-                  <div className="run-row">
-                    <span className="run-type">{inv.email}</span>
+                <div key={inv.id} className="run-item">
+                  <div className="run-item-row">
+                    <span className="run-item-type">{inv.email}</span>
                     <span className="injury-pill">{inv.status === "PENDING" ? "Waiting" : "Rejected"}</span>
                   </div>
                   {inv.status === "PENDING" && (
-                    <div className="run-row" style={{ marginTop: 8 }}>
-                      <span className="run-meta">
+                    <div className="run-item-row" style={{ marginTop: 8 }}>
+                      <span className="run-item-meta">
                         {expired
                           ? `Link expired ${new Date(inv.expiresAt).toLocaleDateString()}`
                           : `Link expires ${new Date(inv.expiresAt).toLocaleDateString()}`}
