@@ -61,14 +61,15 @@ describe("GET /api/athletes/:id/stats", () => {
     expect(res.body.stats.avgPaceMinPerMile).toBeCloseTo(74 / 8, 5);
     expect(res.body.stats.weeklyDistanceMiles).toBe(8); // both runs within the last 7 days
     expect(res.body.stats.sessionCount).toBe(3); // strength session counts here...
-    expect(res.body.stats.avgRpe).toBeCloseTo((4 + 6 + 8) / 3, 5); // ...and here...
+    // Duration-weighted, not a flat mean of 4/6/8 -- (4*50 + 6*24 + 8*45) / (50+24+45).
+    expect(res.body.stats.avgRpe).toBeCloseTo((4 * 50 + 6 * 24 + 8 * 45) / (50 + 24 + 45), 5); // ...and here...
     expect(res.body.stats.distanceSeries).toHaveLength(2); // ...but not here (distance/pace series exclude it)
     expect(res.body.stats.paceSeries).toHaveLength(2);
     expect(res.body.stats.avgSleep).toBeUndefined(); // no averaged wellness numbers here at all -- see Check-in History instead
     expect(res.body.stats.avgEnergy).toBeUndefined();
   });
 
-  it("rolls up same-day runs (two-a-days) into one trend point each, with a true weighted pace, not one point per run", async () => {
+  it("rolls up same-day runs (two-a-days) into one trend point each, with a true weighted pace and RPE, not one point per run", async () => {
     const { athlete } = await createAthlete({ username: "ath.stats.twoaday", firstName: "TwoADay", lastName: "Ath", squad: "GIRLS" });
     const coach = await createCoach({ username: "coach.stats.twoaday", firstName: "Coach", lastName: "TwoADay" });
     await assignRoster(coach.id, athlete.id);
@@ -106,8 +107,36 @@ describe("GET /api/athletes/:id/stats", () => {
     const twoADayPace = res.body.stats.paceSeries.find((p: { paceMinPerMile: number }) => Math.abs(p.paceMinPerMile - 52 / 6) < 1e-6);
     expect(twoADayPace).toBeTruthy(); // true weighted pace: (20+32)min / (2+4)mi, not an average of 10 and 8 min/mi
 
-    const twoADayRpe = res.body.stats.rpeSeries.find((r: { rpe: number }) => Math.abs(r.rpe - 5) < 1e-6);
-    expect(twoADayRpe).toBeTruthy(); // (3 + 7) / 2
+    const expectedTwoADayRpe = (3 * 20 + 7 * 32) / (20 + 32);
+    const twoADayRpe = res.body.stats.rpeSeries.find((r: { rpe: number }) => Math.abs(r.rpe - expectedTwoADayRpe) < 1e-6);
+    expect(twoADayRpe).toBeTruthy(); // true weighted RPE: (3*20 + 7*32) / (20+32), not a flat average of 3 and 7
+  });
+
+  it("avgRpe is duration-weighted -- a short easy session doesn't pull the average down as much as a long hard one pulls it up", async () => {
+    const { athlete } = await createAthlete({ username: "ath.stats.rpeweight", firstName: "RpeWeight", lastName: "Ath", squad: "BOYS" });
+    const coach = await createCoach({ username: "coach.stats.rpeweight", firstName: "Coach", lastName: "RpeWeight" });
+    await assignRoster(coach.id, athlete.id);
+
+    // A 15-minute recovery shakeout at RPE 2, and a 90-minute tempo run at
+    // RPE 8. A flat mean would read 5.0 ("medium") -- but the athlete
+    // spent 6x as long at the hard effort as the easy one, so the real
+    // picture is much closer to "mostly hard".
+    await prisma.trainingLoad.create({
+      data: { athleteId: athlete.id, runType: "Recovery shakeout", distanceMiles: 1.5, durationMin: 15, rpe: 2, load: 30, date: daysAgo(1) },
+    });
+    await prisma.trainingLoad.create({
+      data: { athleteId: athlete.id, runType: "Long tempo", distanceMiles: 10, durationMin: 90, rpe: 8, load: 720, date: daysAgo(2) },
+    });
+
+    const token = await loginAs("coach.stats.rpeweight");
+    const res = await request(app).get(`/api/athletes/${athlete.id}/stats`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+
+    const flatMean = (2 + 8) / 2; // 5.0 -- what the old, wrong implementation would have returned
+    const durationWeighted = (2 * 15 + 8 * 90) / (15 + 90); // (30 + 720) / 105 ≈ 7.14
+
+    expect(res.body.stats.avgRpe).not.toBeCloseTo(flatMean, 1);
+    expect(res.body.stats.avgRpe).toBeCloseTo(durationWeighted, 5);
   });
 
   it("phase is 'complete' once the athlete's oldest data is >= 28 days old, and workload numbers match computeReadinessBreakdown directly", async () => {

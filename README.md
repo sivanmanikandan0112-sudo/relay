@@ -797,7 +797,20 @@ the week.
 The distance/pace/RPE trend charts on this same view (`GET /api/athletes/:id/stats`) are
 day-granular too, for the same reason: a two-a-day rolls up into **one point** for that day (summed
 distance, a true weighted pace — total duration over total distance for the day, not an average of
-each run's own pace — and the day's average RPE), rather than one point per individual run.
+each run's own pace — and a **duration-weighted RPE**, same idea), rather than one point per
+individual run.
+
+Both the day-by-day trend's RPE and the season-long **Average RPE** stat tile are duration-weighted
+(`Σ(rpe × duration) / Σduration`), not a flat mean of each session's own RPE — the same reasoning
+already applied to pace. A flat mean treats a 15-minute recovery jog at RPE 2 and a 90-minute tempo
+run at RPE 8 as equal contributions to "the average," which reads as "medium effort" even though
+the athlete spent six times as long at the hard end. Weighting by duration also matches how RPE is
+actually used everywhere else in this app — `load = rpe × duration` is the literal session-load
+formula the readiness pipeline's own `effortCost` already runs on every logged session (see
+[`lib/scoring.ts`](backend/src/lib/scoring.ts)) — so the displayed average now reflects the same
+notion of effort the acute/chronic/ACWR numbers below it are built from, instead of a differently-
+weighted number that happened to sit next to them. Purely a display change — this stat was never
+fed into any calculation itself, only ever shown in [`AthleteStats.tsx`](frontend/src/components/AthleteStats.tsx).
 
 Sleep and energy deliberately have **no** averaged number or trend chart anywhere in Stats, unlike
 RPE/distance — those are the athlete's own 1–5 subjective check-in self-rating, not a real

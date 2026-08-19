@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, requireRole } from "../middleware/requireAuth.js";
 import { canAccessAthlete, isCoachOfAthlete } from "../lib/authz.js";
 import { computeReadinessBreakdown } from "../lib/scoring.js";
-import { getDataPhase, mean } from "../lib/math.js";
+import { getDataPhase } from "../lib/math.js";
 import { groupByDay, localDayKey } from "../lib/date.js";
 import { pushEnabled, trySendPush } from "../lib/push.js";
 
@@ -151,6 +151,22 @@ athletesRouter.get("/:id/stats", async (req, res) => {
   const totalDurationOverDistance = distanceLoads.reduce((sum, l) => sum + l.durationMin, 0);
   const avgPaceMinPerMile = totalDistanceMiles > 0 ? totalDurationOverDistance / totalDistanceMiles : null;
 
+  // Duration-weighted, not a flat mean of each run's own rpe -- a flat
+  // mean treats a 15-minute recovery jog at RPE 2 the same as a 90-minute
+  // tempo run at RPE 8, which understates how hard the athlete's actual
+  // training time skewed. Weighting by duration is also just the same
+  // idea avgPaceMinPerMile above already applies (total time over total
+  // distance, not an average of each run's own pace), and it matches how
+  // this app already treats effort elsewhere -- `load = rpe * duration`
+  // is the exact session-load formula the readiness pipeline itself uses
+  // (see lib/scoring.ts's effortCost). Every TrainingLoad row has a
+  // duration (unlike distance, which strength/cross-training days can
+  // omit), so this still covers every session, not just the runs with
+  // a logged distance.
+  const totalDurationMin = loads.reduce((sum, l) => sum + l.durationMin, 0);
+  const totalRpeDurationMin = loads.reduce((sum, l) => sum + l.rpe * l.durationMin, 0);
+  const avgRpe = totalDurationMin > 0 ? totalRpeDurationMin / totalDurationMin : null;
+
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   const weeklyDistanceMiles = distanceLoads
     .filter((l) => l.date >= weekAgo)
@@ -164,7 +180,7 @@ athletesRouter.get("/:id/stats", async (req, res) => {
       avgPaceMinPerMile,
       weeklyDistanceMiles,
       sessionCount: loads.length,
-      avgRpe: loads.length > 0 ? mean(loads.map((l) => l.rpe)) : null,
+      avgRpe,
       // Deliberately no avgSleep/avgEnergy/sleepSeries/energySeries here --
       // unlike RPE or distance, those are the athlete's own 1-5 subjective
       // check-in self-ratings, not a real measurement. Averaging a Likert
@@ -178,16 +194,19 @@ athletesRouter.get("/:id/stats", async (req, res) => {
       // worth keeping individually visible elsewhere), but the trend
       // itself rolls that day up: summed distance, a true weighted pace
       // (total duration / total distance for the day, not an average of
-      // each run's own pace), and the day's average RPE across every
+      // each run's own pace), and a duration-weighted RPE across every
       // session logged that day (including distance-less strength work,
-      // same rows rpeSeries already included one-row-at-a-time before).
+      // same rows rpeSeries already included one-row-at-a-time before) --
+      // same reasoning as the season-long avgRpe above, so a light
+      // 15-minute shakeout and a hard 90-minute tempo run logged the same
+      // day don't just average out to "medium".
       distanceSeries: groupByDay(distanceLoads, (l) => l.date).map(({ day, items }) => ({
         date: day,
         distanceMiles: items.reduce((sum, l) => sum + l.distanceMiles, 0),
       })),
       rpeSeries: groupByDay(loads, (l) => l.date).map(({ day, items }) => ({
         date: day,
-        rpe: mean(items.map((l) => l.rpe)),
+        rpe: items.reduce((sum, l) => sum + l.rpe * l.durationMin, 0) / items.reduce((sum, l) => sum + l.durationMin, 0),
       })),
       paceSeries: groupByDay(distanceLoads, (l) => l.date).map(({ day, items }) => ({
         date: day,
