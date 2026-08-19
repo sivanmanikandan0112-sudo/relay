@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, type Squad } from "../lib/api";
 import { currentIsoWeek } from "../lib/format";
@@ -25,6 +25,7 @@ const ATH_TABS = [
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [squads, setSquads] = useState<Squad[]>([]);
   const [squadId, setSquadId] = useState<string | null>(null);
 
@@ -32,6 +33,17 @@ export function Layout() {
   const isAthlete = user?.role === "ATHLETE";
   const needsGender = isAthlete && !user?.gender;
   const needsCoach = isAthlete && !!user?.gender && !user?.hasCoach;
+  // Profile is exempt from the "waiting on a coach" gate below -- the
+  // topbar's own "My Profile" link is always visible regardless of
+  // needsCoach, and used to silently do nothing for a coach-less
+  // athlete who clicked it: <main> ignored which route was actually
+  // active and always rendered NoCoachNotice instead of the real page.
+  // That's not just a dead link -- it meant a coach-less athlete had no
+  // way to reach their own password/MFA settings, or the self-service
+  // data export/account deletion Profile.tsx offers, contradicting
+  // "self-service, no coach or admin required" for exactly the athletes
+  // most likely to want to delete an abandoned signup.
+  const onProfile = location.pathname === "/profile";
 
   useEffect(() => {
     if (!isCoach) return;
@@ -116,7 +128,7 @@ export function Layout() {
           )}
         </nav>
       )}
-      <main className="page">{needsCoach ? <NoCoachNotice /> : <Outlet context={{ squadId }} />}</main>
+      <main className="page">{needsCoach && !onProfile ? <NoCoachNotice /> : <Outlet context={{ squadId }} />}</main>
       <Footer />
     </div>
   );

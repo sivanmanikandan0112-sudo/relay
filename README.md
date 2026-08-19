@@ -970,6 +970,18 @@ data-processing agreement. There's no in-app parental-consent capture mechanism 
 flow, no attestation checkbox) — that's left to whatever consent process a school already runs
 outside the app, same as it already handles any other permission-slip-style requirement.
 
+Shipping this surfaced a real, pre-existing bug that would have quietly defeated both of these
+rights for one specific group: an athlete stuck waiting on a coach (signed up, but never actually
+added to anyone's roster). `Layout.tsx`'s `<main>` decided what to render purely from `needsCoach`,
+ignoring which route was actually active — so the topbar's "My Profile" link (always visible,
+regardless of `needsCoach`) silently did nothing for these athletes; clicking it kept the URL at
+`/profile` but `<main>` still rendered the "waiting on a coach" notice instead of the real page. No
+way to reach password/MFA settings, and — the two things that made this worth calling out — no way
+to export their data or delete an abandoned signup, for exactly the athletes most likely to want
+to. Fixed by exempting `/profile` specifically from that gate (`useLocation()` checked alongside
+`needsCoach`); every other athlete-only tab (Check-in, My Runs) still correctly stays hidden until
+they're actually rostered, since those still wouldn't do anything useful yet.
+
 ## Getting started
 
 ### Prerequisites
