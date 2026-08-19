@@ -23,11 +23,33 @@ const ATH_TABS = [
 ];
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [squads, setSquads] = useState<Squad[]>([]);
   const [squadId, setSquadId] = useState<string | null>(null);
+
+  // The cached user (localStorage, hydrated once at login) never
+  // otherwise refreshes from the server for the rest of a session --
+  // every existing self-service action already patches it locally right
+  // after the change it made, but nothing catches up a change made by
+  // someone *else*. Most consequential: a coach adding an athlete to
+  // their roster, or a school-join approval, changes that athlete's
+  // real hasCoach server-side, but their already-open tab's cached copy
+  // stays stale -- since needsCoach below reads straight from that
+  // cache, they'd keep seeing "waiting on a coach" indefinitely even
+  // after actually being rostered, until they happened to log out and
+  // back in. One GET /api/me on mount (every fresh page load / new tab,
+  // not a continuous poll) catches that up without needing every
+  // possible "someone else changed something about you" action
+  // elsewhere in the app to know to push an update into this tab.
+  // Fails silently on error (offline, a momentary blip) -- the cached
+  // value it already has is still a reasonable fallback, and a hard
+  // failure here shouldn't log someone out over a flaky network request.
+  useEffect(() => {
+    api.me().then(updateUser).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const isCoach = user?.role === "COACH";
   const isAthlete = user?.role === "ATHLETE";

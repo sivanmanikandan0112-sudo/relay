@@ -995,6 +995,23 @@ to. Fixed by exempting `/profile` specifically from that gate (`useLocation()` c
 `needsCoach`); every other athlete-only tab (Check-in, My Runs) still correctly stays hidden until
 they're actually rostered, since those still wouldn't do anything useful yet.
 
+A second, related bug turned up while auditing for more of the same: `needsCoach` (and every other
+gate that reads straight off the logged-in `user` object — `isSuperAdmin`, `schoolId`, `gender`,
+`reminderHour`, all of it) comes entirely from a copy of `AuthUser` cached in `localStorage` at
+login time. Every existing self-service action already patches that cache locally right after the
+change it makes (`updateUser(...)`, see `AuthContext.tsx`) — but nothing ever caught up a change
+made by *someone else*. Most consequential: a coach adding an athlete to their roster changes that
+athlete's real `hasCoach` server-side, but an already-open tab's cached copy stayed stale — an
+athlete could be fully rostered and still see "waiting on a coach" indefinitely in that tab, with
+no way to know it was already fixed on the coach's end, short of guessing to log out and back in.
+`GET /api/me` (`api.me()`) existed the whole time but was never actually called anywhere in the
+frontend. Fixed with one fetch-and-merge into the cached user on `Layout.tsx`'s mount (every fresh
+page load or new tab, not a continuous poll — fails silently on error, keeping the cached value as
+a reasonable fallback rather than risking a spurious logout over a flaky request). This closes the
+gap for the common case (closing and reopening the app, or a plain reload) but not for a coach
+connecting an athlete while that athlete's tab stays open and untouched the whole time — a true
+fix for that would need either a poll or a push-driven refresh, neither of which this change adds.
+
 ## Getting started
 
 ### Prerequisites
