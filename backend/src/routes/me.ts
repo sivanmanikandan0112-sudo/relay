@@ -9,6 +9,7 @@ import { GENDER_TO_SQUAD } from "../lib/gender.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import { pushEnabled } from "../lib/push.js";
 import { DEFAULT_REMINDER_HOUR, MAX_REMINDER_HOUR, MIN_REMINDER_HOUR } from "../lib/pushReminder.js";
+import { randomUnambiguousString } from "../lib/randomCode.js";
 
 export const meRouter = Router();
 
@@ -273,4 +274,151 @@ meRouter.delete("/push-subscription", async (req, res) => {
   }
   await prisma.pushSubscription.deleteMany({ where: { endpoint: parsed.data.endpoint, userId: req.user!.sub } });
   res.json({ subscribed: false });
+});
+
+// Self-service "download my data" -- everything this app has stored
+// under the caller's own account, as one JSON document. See the Data &
+// Privacy page (DataPolicy.tsx) for what this covers and why; this route
+// is the actual implementation of the right that page describes, not
+// just a description of it.
+meRouter.get("/export", async (req, res) => {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
+
+  const account = {
+    username: user.username,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    role: user.role,
+    accountCreatedAt: user.createdAt,
+  };
+
+  if (!athleteId) {
+    // A coach's own export is much smaller -- their account fields plus
+    // the notes they've personally written (the one place a coach's own
+    // free-text input lives). Their roster/school membership isn't
+    // "their" data in the same sense -- it's already visible to them
+    // live in the app, and belongs to the athletes it's actually about.
+    const notesWritten = await prisma.note.findMany({
+      where: { coachId: user.id },
+      select: { body: true, createdAt: true, athlete: { select: { name: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      account,
+      notesYouWrote: notesWritten.map((n) => ({ about: n.athlete.name, body: n.body, createdAt: n.createdAt })),
+    });
+  }
+
+  const [athlete, checkIns, runs, injuries, notesReceived, readinessScores] = await Promise.all([
+    prisma.athlete.findUnique({
+      where: { id: athleteId },
+      select: { name: true, gender: true, squad: { select: { name: true } }, shareReadinessWithAthlete: true, createdAt: true },
+    }),
+    prisma.wellnessEntry.findMany({ where: { athleteId }, orderBy: { day: "asc" } }),
+    prisma.trainingLoad.findMany({ where: { athleteId }, orderBy: { date: "asc" } }),
+    prisma.injury.findMany({ where: { athleteId }, orderBy: { startDate: "asc" } }),
+    prisma.note.findMany({
+      where: { athleteId },
+      select: { body: true, createdAt: true, coach: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.readinessScore.findMany({ where: { athleteId }, orderBy: [{ year: "asc" }, { week: "asc" }] }),
+  ]);
+
+  res.json({
+    exportedAt: new Date().toISOString(),
+    account,
+    athleteProfile: athlete,
+    checkIns,
+    runs,
+    injuries,
+    coachNotes: notesReceived.map((n) => ({ from: `${n.coach.firstName} ${n.coach.lastName}`, body: n.body, createdAt: n.createdAt })),
+    readinessScores,
+  });
+});
+
+const deleteAccountSchema = z.object({ currentPassword: z.string().min(1) });
+
+// Self-service "delete my account" -- anonymizes, doesn't hard-delete.
+// Every identifying field on this User row (and, for an athlete, on
+// their Athlete row's `name`) is scrambled to a placeholder; every row
+// that actually matters for a coach's ongoing training picture -- check-
+// ins, runs, readiness scores, injuries, notes -- is left exactly as it
+// is, the same "history survives, identity doesn't" shape "Remove from
+// roster" (DELETE /api/athletes/:id/roster) already uses for the
+// roster-link half of this. Requires the current password, same as
+// change-password/MFA-disable -- this is the single most destructive
+// self-service action in the app, so it gets the same bar every other
+// "prove you're really you right now" action already does.
+//
+// Deliberately still requireAuth-only, not requireRole -- both an
+// athlete and a coach can delete their own account; a coach's version
+// just has less athlete-specific cleanup to do.
+meRouter.delete("/", async (req, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+  if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
+    return res.status(400).json({ error: "Current password is incorrect" });
+  }
+
+  // Resolved before the transaction -- a pure read with nothing else in
+  // this request able to race it, and getOwnAthleteId's own shared
+  // prisma client isn't the transaction's own tx handle anyway.
+  const athleteId = user.role === "ATHLETE" ? await getOwnAthleteId(user.id) : null;
+
+  const suffix = randomUnambiguousString(10);
+  // A real bcrypt hash of a value nobody will ever type -- not a blank
+  // or predictable string -- so this account can never be logged into
+  // again by any means, not just "the old password stopped working".
+  const scrambledPasswordHash = await bcrypt.hash(randomUnambiguousString(24), 10);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.pushSubscription.deleteMany({ where: { userId: user.id } });
+    await tx.mfaBackupCode.deleteMany({ where: { userId: user.id } });
+    await tx.passwordResetToken.deleteMany({ where: { userId: user.id } });
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        username: `deleted-${suffix}`,
+        email: `deleted-${suffix}@deleted.relaycoach.app`,
+        firstName: "Deleted",
+        lastName: user.role === "ATHLETE" ? "Athlete" : "Coach",
+        passwordHash: scrambledPasswordHash,
+        googleId: null,
+        totpSecretEncrypted: null,
+        totpEnabled: false,
+        isSuperAdmin: false,
+        schoolId: null,
+        reminderHour: null,
+      },
+    });
+
+    if (athleteId) {
+      // No longer an active part of anyone's roster -- same effect as
+      // "Remove from roster", just for every coach at once instead of
+      // one at a time. WellnessEntry/TrainingLoad/ReadinessScore/Injury/
+      // Note rows are deliberately untouched below this line.
+      await tx.coachAthlete.deleteMany({ where: { athleteId } });
+      await tx.athlete.update({
+        where: { id: athleteId },
+        data: { name: "Deleted Athlete", shareReadinessWithAthlete: false },
+      });
+    } else {
+      // A coach's own roster links -- an athlete who loses their only
+      // coach this way falls back to the existing "no coach yet" gate
+      // (NoCoachNotice.tsx); one who shares a school still has every
+      // other coach there via the school's own live-join visibility,
+      // untouched by this.
+      await tx.coachAthlete.deleteMany({ where: { coachId: user.id } });
+    }
+  });
+
+  res.json({ deleted: true });
 });

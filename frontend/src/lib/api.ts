@@ -66,6 +66,9 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  exportMyData: () => request<Record<string, unknown>>("/me/export"),
+  deleteMyAccount: (currentPassword: string) =>
+    request<{ deleted: boolean }>("/me", { method: "DELETE", body: JSON.stringify({ currentPassword }) }),
   setReadinessVisibility: (share: boolean) =>
     request<{ shared: boolean }>("/me/readiness-visibility", { method: "PATCH", body: JSON.stringify({ share }) }),
   setReminderHour: (hour: number | null) =>

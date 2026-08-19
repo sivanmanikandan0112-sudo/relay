@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, loginAs } from "./helpers.js";
-import { createAthlete, createCoach, ensureSquad, resetDb, TEST_PASSWORD } from "../testDb.js";
+import { assignRoster, createAthlete, createCoach, ensureSquad, resetDb, TEST_PASSWORD } from "../testDb.js";
 import { prisma } from "../../src/lib/prisma.js";
 import { recomputeReadiness } from "../../src/lib/scoring.js";
 
@@ -265,5 +265,114 @@ describe("POST /api/me/push-subscription with no VAPID keys configured", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ endpoint: "https://push.example.com/x", keys: { p256dh: "a", auth: "b" } });
     expect(res.status).toBe(503);
+  });
+});
+
+describe("GET /api/me/export", () => {
+  it("an athlete's export includes their own check-ins, runs, injuries, and notes from their coach", async () => {
+    const coach = await createCoach({ username: "coach.export", firstName: "Exp", lastName: "Coach" });
+    const { athlete } = await createAthlete({ username: "ath.export", firstName: "Exp", lastName: "Athlete", squad: "GIRLS" });
+    await assignRoster(coach.id, athlete.id);
+    const token = await loginAs("ath.export");
+
+    await request(app)
+      .post("/api/wellness")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 });
+    await request(app)
+      .post("/api/training-load")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ runType: "Easy 4mi", durationMin: 32, rpe: 4 });
+    await prisma.injury.create({ data: { athleteId: athlete.id, description: "Sore knee" } });
+    await prisma.note.create({ data: { athleteId: athlete.id, coachId: coach.id, body: "Keep an eye on that knee." } });
+
+    const res = await request(app).get("/api/me/export").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.account.username).toBe("ath.export");
+    expect(res.body.checkIns).toHaveLength(1);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.injuries).toHaveLength(1);
+    expect(res.body.coachNotes).toEqual([expect.objectContaining({ body: "Keep an eye on that knee.", from: "Exp Coach" })]);
+    expect(res.body.readinessScores.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a coach's export includes the notes they've written, not a full roster dump", async () => {
+    const coach = await createCoach({ username: "coach.export2", firstName: "Exp2", lastName: "Coach" });
+    const { athlete } = await createAthlete({ username: "ath.export2", firstName: "Exp2", lastName: "Athlete", squad: "BOYS" });
+    await assignRoster(coach.id, athlete.id);
+    await prisma.note.create({ data: { athleteId: athlete.id, coachId: coach.id, body: "Great progress this week." } });
+    const token = await loginAs("coach.export2");
+
+    const res = await request(app).get("/api/me/export").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.account.username).toBe("coach.export2");
+    expect(res.body.notesYouWrote).toEqual([expect.objectContaining({ body: "Great progress this week.", about: "Exp2 Athlete" })]);
+    expect(res.body.checkIns).toBeUndefined();
+  });
+});
+
+describe("DELETE /api/me (self-service account deletion)", () => {
+  it("wrong currentPassword -> 400, account untouched", async () => {
+    await createAthlete({ username: "ath.del.wrong", firstName: "Del", lastName: "Wrong", squad: "GIRLS" });
+    const token = await loginAs("ath.del.wrong");
+
+    const res = await request(app)
+      .delete("/api/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: "not-it" });
+    expect(res.status).toBe(400);
+
+    const stillThere = await prisma.user.findUnique({ where: { username: "ath.del.wrong" } });
+    expect(stillThere).not.toBeNull();
+  });
+
+  it("anonymizes an athlete's account, preserves their history, and removes them from every coach's roster", async () => {
+    const coach = await createCoach({ username: "coach.del", firstName: "Del", lastName: "Coach" });
+    const { user, athlete } = await createAthlete({ username: "ath.del.real", firstName: "Del", lastName: "Athlete", squad: "GIRLS" });
+    await assignRoster(coach.id, athlete.id);
+    await prisma.wellnessEntry.create({
+      data: { athleteId: athlete.id, day: new Date(), sleep: 4, soreness: 2, mood: 4, energy: 4, motivation: 4 },
+    });
+    const token = await loginAs("ath.del.real");
+
+    const res = await request(app)
+      .delete("/api/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: TEST_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(res.body.deleted).toBe(true);
+
+    const anonymized = await prisma.user.findUniqueOrThrow({ where: { id: user!.id } });
+    expect(anonymized.username).toMatch(/^deleted-/);
+    expect(anonymized.email).toMatch(/^deleted-.*@deleted\.relaycoach\.app$/);
+    expect(anonymized.firstName).toBe("Deleted");
+    expect(anonymized.lastName).toBe("Athlete");
+
+    const anonymizedAthlete = await prisma.athlete.findUniqueOrThrow({ where: { id: athlete.id } });
+    expect(anonymizedAthlete.name).toBe("Deleted Athlete");
+
+    // History survives -- this is anonymization, not deletion.
+    expect(await prisma.wellnessEntry.count({ where: { athleteId: athlete.id } })).toBe(1);
+
+    // No longer on the coach's roster.
+    expect(await prisma.coachAthlete.count({ where: { athleteId: athlete.id } })).toBe(0);
+
+    // The old password (and old username) can never log in again.
+    const oldLogin = await request(app).post("/api/auth/login").send({ username: "ath.del.real", password: TEST_PASSWORD });
+    expect(oldLogin.status).toBe(401);
+  });
+
+  it("removes a coach's own roster links on deletion, leaving their solo-coached athlete with no coach", async () => {
+    const coach = await createCoach({ username: "coach.del.solo", firstName: "Solo", lastName: "Coach" });
+    const { athlete } = await createAthlete({ username: "ath.del.orphan", firstName: "Orphan", lastName: "Athlete", squad: "BOYS" });
+    await assignRoster(coach.id, athlete.id);
+    const token = await loginAs("coach.del.solo");
+
+    const res = await request(app)
+      .delete("/api/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: TEST_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(await prisma.coachAthlete.count({ where: { athleteId: athlete.id } })).toBe(0);
   });
 });

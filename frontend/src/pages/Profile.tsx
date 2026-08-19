@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { renderGoogleButton } from "../lib/google";
@@ -15,7 +16,8 @@ const DEFAULT_REMINDER_HOUR = 16;
 const REMINDER_HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 
 export function Profile() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -55,6 +57,14 @@ export function Profile() {
   // coach's default for their roster) -----------------------------------
   const [reminderSaving, setReminderSaving] = useState(false);
   const [reminderError, setReminderError] = useState<string | null>(null);
+
+  // --- Your data: export + delete account (both roles) -----------------
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function refreshMfaStatus() {
     api.mfaStatus().then(setMfaStatus);
@@ -203,6 +213,41 @@ export function Profile() {
       setReminderError(err instanceof Error ? err.message : "Couldn't save that");
     } finally {
       setReminderSaving(false);
+    }
+  }
+
+  async function handleExportData() {
+    setExportError(null);
+    setExporting(true);
+    try {
+      const data = await api.exportMyData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `relay-data-${user?.username ?? "export"}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Couldn't export your data");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await api.deleteMyAccount(deletePassword);
+      logout();
+      navigate("/login", { replace: true });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Couldn't delete your account");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -527,6 +572,85 @@ export function Profile() {
             </button>
           </div>
         )}
+      </div>
+
+      <div className="panel">
+        <h2>Your data</h2>
+        <p style={{ color: "var(--text-dim)", fontSize: 13.5 }}>
+          See exactly what Relay collects and why on the{" "}
+          <Link to="/data-policy" style={{ color: "var(--text-dim-2)" }}>
+            Data &amp; privacy
+          </Link>{" "}
+          page.
+        </p>
+
+        <div style={{ marginTop: 12 }}>
+          <button className="btn-secondary" disabled={exporting} onClick={handleExportData}>
+            {exporting ? "Preparing…" : "Download my data"}
+          </button>
+          {exportError && (
+            <p className="error" style={{ marginTop: 8 }}>
+              {exportError}
+            </p>
+          )}
+        </div>
+
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          {!deleteConfirming ? (
+            <button
+              className="btn-secondary"
+              style={{ color: "var(--red)", borderColor: "var(--red)" }}
+              onClick={() => setDeleteConfirming(true)}
+            >
+              Delete my account
+            </button>
+          ) : (
+            <div style={{ borderLeft: "3px solid var(--red)", paddingLeft: 12 }}>
+              <p style={{ margin: 0, fontSize: 13, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                This permanently scrubs your name, username, email, and any linked sign-in method —
+                your account can never be logged into again.{" "}
+                {user?.role === "ATHLETE"
+                  ? "Your check-in, run, and readiness history stays on file (so your coach's season-long picture isn't torn a hole in) but is no longer tied to your identity, and you're removed from your coach's roster immediately."
+                  : "Any notes you've written stay attached to your athletes' records, but no longer show your name."}{" "}
+                This can't be undone.
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <input
+                  className="ath-input"
+                  style={{ flex: 1, minWidth: 180 }}
+                  type="password"
+                  placeholder="Current password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                />
+                <button
+                  className="btn-primary"
+                  style={{ background: "var(--red)" }}
+                  disabled={deleting || !deletePassword}
+                  onClick={handleDeleteAccount}
+                >
+                  {deleting ? "Deleting…" : "Yes, permanently delete my account"}
+                </button>
+                <button
+                  className="btn-secondary"
+                  disabled={deleting}
+                  onClick={() => {
+                    setDeleteConfirming(false);
+                    setDeletePassword("");
+                    setDeleteError(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {deleteError && (
+                <p className="error" style={{ marginTop: 8 }}>
+                  {deleteError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

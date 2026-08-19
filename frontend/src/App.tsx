@@ -17,6 +17,7 @@ import { Join } from "./pages/Join";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ResetPassword } from "./pages/ResetPassword";
 import { AcceptInvite } from "./pages/AcceptInvite";
+import { DataPolicy } from "./pages/DataPolicy";
 import { AdminOverview } from "./pages/admin/AdminOverview";
 import { AdminCoaches } from "./pages/admin/AdminCoaches";
 import { AdminCoachDetail } from "./pages/admin/AdminCoachDetail";
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/accept-invite/:token" element={<AcceptInvite />} />
+        <Route path="/data-policy" element={<DataPolicy />} />
         <Route
           element={
             <RequireAuth>

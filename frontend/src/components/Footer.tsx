@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 const SUPPORT_EMAIL = "relaycoach.app@gmail.com";
 
 // Shared between Layout.tsx (every authenticated page, coach or athlete)
@@ -12,6 +14,8 @@ export function Footer() {
   return (
     <footer className="app-footer">
       Found a bug, have a question, or an idea? <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+      {" · "}
+      <Link to="/data-policy">Data &amp; privacy</Link>
     </footer>
   );
 }

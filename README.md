@@ -932,6 +932,44 @@ project's own commit history for the reasoning: permanently destroying a real at
 and run history over a roster-cleanup request is a much bigger, harder-to-undo action than the
 actual problem ("this person isn't running with us anymore") calls for.
 
+### Data export and account deletion (self-service)
+
+Two self-service rights, both roles, from **My Profile** — no coach, admin, or email required:
+
+- **Download my data** (`GET /api/me/export`) — every row this app has stored under the caller's
+  own account, as one JSON document the browser downloads directly (client-side `Blob` + a
+  throwaway `<a download>`, no server-side file storage involved). An athlete's export is their
+  account fields, athlete profile, check-ins, runs, injuries, readiness scores, and every note
+  their coach has left them; a coach's own export is much smaller — their account fields plus the
+  notes *they've* personally written (their roster/school membership isn't really "their" data in
+  the same sense, and is already visible to them live in the app).
+- **Delete my account** (`DELETE /api/me`, `{currentPassword}`, same "prove you're really you right
+  now" bar as change-password/MFA-disable) — **anonymizes, not hard-deletes**, the same
+  "history survives, identity doesn't" shape [removing an athlete from the roster](#removing-an-athlete-from-the-roster)
+  above already established, just one step further: username, email, first/last name, and any
+  linked sign-in method (Google, MFA, push subscriptions, reset tokens) are all scrubbed to a
+  random placeholder or removed outright, so the account can never be logged into again by any
+  means — but check-ins, runs, injuries, readiness scores, and notes all stay exactly as they are,
+  the same reasoning the roster-removal feature already spelled out (permanently destroying real
+  training history over an identity request is a bigger, harder-to-undo action than the actual ask
+  calls for). An athlete is also immediately removed from every coach's roster (`Athlete.name`
+  becomes "Deleted Athlete"); a coach's own roster links are removed the same way, and any athlete
+  left with no coach at all falls back to the existing `NoCoachNotice` "waiting on a coach" state —
+  the same one a brand-new, never-rostered athlete already sees.
+
+Backed by [`lib/randomCode.ts`](backend/src/lib/randomCode.ts)'s existing `randomUnambiguousString`
+(already used for join codes and MFA backup codes) for the placeholder username/email, and a real
+`bcrypt` hash of a value nobody will ever type for the scrambled password — not a blank or
+predictable string, so there's no way back in even by guessing.
+
+A public **Data & privacy** page (`/data-policy`, [`pages/DataPolicy.tsx`](frontend/src/pages/DataPolicy.tsx),
+linked from every page's footer and from Profile) plainly describes what's collected, why, who can
+see it, and these two rights — a real, honest description of what this app actually does, but
+deliberately not a substitute for a lawyer-drafted privacy policy or a school district's own formal
+data-processing agreement. There's no in-app parental-consent capture mechanism (no e-signature
+flow, no attestation checkbox) — that's left to whatever consent process a school already runs
+outside the app, same as it already handles any other permission-slip-style requirement.
+
 ## Getting started
 
 ### Prerequisites
@@ -1090,6 +1128,8 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | POST | `/api/me/push-subscription` | Save this device's Web Push subscription (both roles; 503 if VAPID isn't configured) |
 | DELETE | `/api/me/push-subscription` | Remove this device's subscription (scoped to your own account) |
 | PATCH | `/api/me/reminder-hour` | Set (0-23) or clear (`null`) your check-in-reminder hour — your own for an athlete, your roster's default for a coach; see [Push notifications](#push-notifications) |
+| GET | `/api/me/export` | Download every row this app has stored under your own account, as one JSON document; see [Data export and account deletion](#data-export-and-account-deletion-self-service) |
+| DELETE | `/api/me` | Permanently anonymize your account (requires current password) — history stays, identity doesn't; see [Data export and account deletion](#data-export-and-account-deletion-self-service) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |
 | POST | `/api/mfa/setup` | Generate a pending TOTP secret + QR code (not yet enabled) |
 | POST | `/api/mfa/verify-setup` | Confirm setup with a 6-digit code → enables 2FA, returns 10 backup codes (shown once) |
