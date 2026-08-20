@@ -1,20 +1,23 @@
 const STEPS = [
   {
-    title: "Check in once a day",
+    title: "Check in once a day — runs go right here too",
     body: (
       <>
         Tap how you're feeling — sleep, energy, mood, motivation, soreness. There's no right
-        answer; honest is what helps. Add a note if something's up. Missed a day? You can go back
-        and fill one in for up to a week — no need to skip it.
+        answer; honest is what helps. Add a note if something's up, and log any run from today
+        right below it — no run to add on a rest day, that's completely normal. Missed a day? You
+        can go back and fill one in for up to a week, check-in and runs together — no need to skip
+        it.
       </>
     ),
   },
   {
-    title: "Log your runs",
+    title: "Look back anytime in History",
     body: (
       <>
-        Add each run by hand in <strong>My Runs</strong> — same catch-up window if you fall
-        behind. That's also where you'll see any notes your coach leaves you.
+        Every past check-in and run, plus your own trend charts, live in <strong>History</strong> —
+        remove a run you logged by mistake there too. That's also where you'll see any notes your
+        coach leaves you.
       </>
     ),
   },

@@ -19,7 +19,7 @@ const COACH_TABS = [
 
 const ATH_TABS = [
   { to: "/checkin", label: "Check-in" },
-  { to: "/runs", label: "My Runs" },
+  { to: "/runs", label: "History" },
   { to: "/athlete-guide", label: "How it works" },
 ];
 

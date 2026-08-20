@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, type Note, type ReadinessScoreRecord, type WellnessEntry } from "../lib/api";
-import { computeStreak, dayLabel, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
+import { api, type Note, type ReadinessScoreRecord, type Run, type WellnessEntry } from "../lib/api";
+import { computeStreak, dayLabel, formatDuration, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
 import { useAuth } from "../context/AuthContext";
+import { ConfirmRunModal } from "../components/ConfirmRunModal";
 
 const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "soreness"; label: string; hint: string }> = [
   { key: "sleep", label: "Sleep", hint: "1 rough · 5 great" },
@@ -12,10 +13,23 @@ const FIELDS: Array<{ key: "sleep" | "energy" | "mood" | "motivation" | "sorenes
   { key: "soreness", label: "Soreness", hint: "1 none · 5 very sore" },
 ];
 
+function clampInt(text: string, min: number, max: number): number {
+  const n = Math.round(Number(text) || 0);
+  return Math.max(min, Math.min(max, n));
+}
+
+// Rounds to 2 decimal places without letting the field hold more.
+function roundDistance(text: string): number | undefined {
+  const n = Number(text);
+  if (!text.trim() || Number.isNaN(n)) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
 export function AthleteCheckin() {
   const { user } = useAuth();
   const athleteId = user?.athleteId ?? null;
   const [history, setHistory] = useState<WellnessEntry[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedDay, setSelectedDay] = useState(todayKey());
   const [draft, setDraft] = useState({ sleep: 3, energy: 3, mood: 3, motivation: 3, soreness: 3 });
@@ -24,12 +38,31 @@ export function AthleteCheckin() {
   const [saving, setSaving] = useState(false);
   const [readiness, setReadiness] = useState<ReadinessScoreRecord | null>(null);
 
+  // --- Runs for the selected day ---------------------------------------
+  // Logging a run used to live on a separate tab entirely -- easy to
+  // finish a check-in and never open it, silently leaving the readiness
+  // pipeline that day with only half its real signal (RPE/duration is
+  // the actual training-load half of the score, not just the subjective
+  // wellness ratings above). One shared LOGGING FOR day picker now
+  // governs both: catching up a missed day means catching up its whole
+  // record, not just the check-in half of it.
+  const [addingRun, setAddingRun] = useState(false);
+  const [title, setTitle] = useState("");
+  const [distance, setDistance] = useState("");
+  const [hh, setHh] = useState("0");
+  const [mm, setMm] = useState("0");
+  const [ss, setSs] = useState("0");
+  const [rpe, setRpe] = useState<number | null>(null);
+  const [confirmingRun, setConfirmingRun] = useState(false);
+  const [savingRun, setSavingRun] = useState(false);
+
   function refresh() {
     if (!athleteId) return;
     api.wellnessForAthlete(athleteId).then(setHistory);
-    // Coach notes already reached the athlete on My Runs -- this is the
-    // page they actually land on first, so a note left there was easy to
-    // never see at all unless they happened to visit My Runs too.
+    api.runsForAthlete(athleteId).then(setRuns);
+    // Notes also show on History (AthleteHistory.tsx), but this is the
+    // page an athlete actually lands on first -- a note left only there
+    // was too easy to never see at all.
     api.notesForAthlete(athleteId).then(setNotes);
   }
 
@@ -43,6 +76,15 @@ export function AthleteCheckin() {
   // long as this component happens to stay mounted. One check-in per
   // athlete per day (see backend's upsert), so this is at most one entry.
   const selectedEntry = history.find((h) => h.day.slice(0, 10) === selectedDay) ?? null;
+
+  // TrainingLoad has no `day` field like WellnessEntry does -- only a raw
+  // `date` timestamp, stamped with the live clock for a same-day
+  // submission. Matching it to selectedDay via todayKey(new Date(r.date))
+  // (the browser's own local calendar day), not r.date.slice(0, 10)
+  // (always UTC), for the exact same reason todayKey's own comment
+  // explains: an evening run logged after ~7pm Central would otherwise
+  // silently match tomorrow's date instead of today's.
+  const runsForDay = runs.filter((r) => todayKey(new Date(r.date)) === selectedDay);
 
   // Once the selected day's entry shows up (on load, right after a
   // submit, or from switching which day is picked), reflect its real
@@ -69,6 +111,19 @@ export function AthleteCheckin() {
     setSubmitted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEntry?.id, selectedDay]);
+
+  // Switching days also closes any in-progress "add a run" form -- half-
+  // filled fields for the day you just left would be confusing sitting
+  // under a different day's header.
+  useEffect(() => {
+    setAddingRun(false);
+    setTitle("");
+    setDistance("");
+    setHh("0");
+    setMm("0");
+    setSs("0");
+    setRpe(null);
+  }, [selectedDay]);
 
   // Only fetch if the athlete has opted in from Profile -- the endpoint
   // itself also enforces this, this just avoids a pointless call otherwise.
@@ -113,6 +168,42 @@ export function AthleteCheckin() {
     } finally {
       setSaving(false);
     }
+  }
+
+  const runDurationMin = Number(hh) * 60 + Number(mm) + Number(ss) / 60;
+  const canAddRun = title.trim().length > 0 && rpe != null && runDurationMin > 0;
+
+  async function handleConfirmRun() {
+    if (!canAddRun || rpe == null) return;
+    setSavingRun(true);
+    try {
+      await api.logRun({
+        runType: title.trim(),
+        distanceMiles: roundDistance(distance),
+        durationMin: runDurationMin,
+        rpe,
+        day: selectedDay,
+      });
+      setTitle("");
+      setDistance("");
+      setHh("0");
+      setMm("0");
+      setSs("0");
+      setRpe(null);
+      setConfirmingRun(false);
+      // Deliberately left open, not closed -- a two-a-day means logging a
+      // second run right after the first one, and the confirmation below
+      // (the fresh entry appearing in the list) is feedback enough that
+      // the first one actually saved.
+      refresh();
+    } finally {
+      setSavingRun(false);
+    }
+  }
+
+  async function handleDeleteRun(id: string) {
+    await api.deleteRun(id);
+    refresh();
   }
 
   return (
@@ -238,6 +329,158 @@ export function AthleteCheckin() {
         </div>
       )}
 
+      <div className="checkin-panel" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div className="field-hint" style={{ margin: 0 }}>
+            {isToday ? "TODAY'S RUNS" : `RUNS · ${dayLabel(selectedDay).toUpperCase()}`}
+          </div>
+          {!addingRun && (
+            <button className="btn-secondary" onClick={() => setAddingRun(true)}>
+              + Add a run
+            </button>
+          )}
+        </div>
+
+        {runsForDay.length === 0 && !addingRun && (
+          <p className="page-subtitle" style={{ fontSize: 13, margin: "8px 0 0" }}>
+            No runs logged {isToday ? "yet today" : "for this day"} — perfectly normal on a rest day.
+          </p>
+        )}
+
+        {runsForDay.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: runsForDay.length > 0 ? 10 : 0 }}>
+            {runsForDay.map((r) => (
+              <div className="run-item" key={r.id}>
+                <div className="run-item-row">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="run-item-type">{r.runType}</div>
+                    <div className="run-item-meta">
+                      {r.distanceMiles != null ? `${r.distanceMiles.toFixed(2)}mi · ` : ""}
+                      {formatDuration(r.durationMin)} · effort {r.rpe}/10
+                    </div>
+                  </div>
+                  <button className="run-item-delete" title="Remove run" onClick={() => handleDeleteRun(r.id)}>
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {addingRun && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <label className="field-hint" style={{ display: "block", marginBottom: 4, color: "var(--text-dim-2)" }}>
+              Title
+            </label>
+            <input
+              className="ath-input"
+              style={{ width: "100%", marginBottom: 10 }}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Easy 5mi, Tempo intervals"
+              autoFocus
+            />
+
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="field-hint" style={{ color: "var(--text-dim-2)" }}>
+                  Distance (miles)
+                </span>
+                <input
+                  className="ath-input"
+                  style={{ width: 130 }}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="200"
+                  value={distance}
+                  onChange={(e) => setDistance(e.target.value)}
+                  placeholder="0.00"
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="field-hint" style={{ color: "var(--text-dim-2)" }}>
+                  Duration (hh:mm:ss)
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    className="ath-input"
+                    style={{ width: 52, textAlign: "center" }}
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={hh}
+                    onChange={(e) => setHh(String(clampInt(e.target.value, 0, 23)))}
+                  />
+                  <span style={{ color: "var(--text-dim)" }}>:</span>
+                  <input
+                    className="ath-input"
+                    style={{ width: 52, textAlign: "center" }}
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={mm}
+                    onChange={(e) => setMm(String(clampInt(e.target.value, 0, 59)))}
+                  />
+                  <span style={{ color: "var(--text-dim)" }}>:</span>
+                  <input
+                    className="ath-input"
+                    style={{ width: 52, textAlign: "center" }}
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={ss}
+                    onChange={(e) => setSs(String(clampInt(e.target.value, 0, 59)))}
+                  />
+                </div>
+              </label>
+            </div>
+
+            <div className="rpe-row" style={{ marginTop: 14 }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <div className="field-hint" style={{ marginBottom: 6 }}>
+                  How hard did it feel? · <span style={{ color: rpe ? "#d9703f" : "#7c88a0" }}>{rpe ? `${rpe}/10` : "not set yet"}</span>
+                </div>
+                <div className="rpe-picker">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
+                    <button key={v} className={`rpe-btn ${rpe === v ? "selected" : ""}`} onClick={() => setRpe(v)}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className={`add-run-btn ${canAddRun ? "enabled" : "disabled"}`} disabled={!canAddRun} onClick={() => setConfirmingRun(true)}>
+                  Add run
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setAddingRun(false);
+                    setTitle("");
+                    setDistance("");
+                    setHh("0");
+                    setMm("0");
+                    setSs("0");
+                    setRpe(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            {!canAddRun && (
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#7c88a0", marginTop: 8 }}>
+                Add a title, a duration, and pick how hard it felt to log the run.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {notes.length > 0 && (
         <>
           <div className="field-hint" style={{ margin: "20px 0 8px" }}>
@@ -273,6 +516,19 @@ export function AthleteCheckin() {
             ))}
           </div>
         </>
+      )}
+
+      {confirmingRun && (
+        <ConfirmRunModal
+          title={title.trim()}
+          distanceMiles={roundDistance(distance)}
+          durationMin={runDurationMin}
+          rpe={rpe ?? 0}
+          dayLabel={dayLabel(selectedDay)}
+          saving={savingRun}
+          onCancel={() => setConfirmingRun(false)}
+          onConfirm={handleConfirmRun}
+        />
       )}
     </div>
   );

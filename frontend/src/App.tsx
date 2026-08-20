@@ -9,7 +9,7 @@ import { CoachInvites } from "./pages/CoachInvites";
 import { School } from "./pages/School";
 import { Profile } from "./pages/Profile";
 import { AthleteCheckin } from "./pages/AthleteCheckin";
-import { AthleteRuns } from "./pages/AthleteRuns";
+import { AthleteHistory } from "./pages/AthleteHistory";
 import { AthleteHowItWorks } from "./pages/AthleteHowItWorks";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
@@ -78,7 +78,7 @@ export default function App() {
           <Route path="/how-it-works" element={<RequireRole role="COACH"><HowItWorks /></RequireRole>} />
 
           <Route path="/checkin" element={<RequireRole role="ATHLETE"><AthleteCheckin /></RequireRole>} />
-          <Route path="/runs" element={<RequireRole role="ATHLETE"><AthleteRuns /></RequireRole>} />
+          <Route path="/runs" element={<RequireRole role="ATHLETE"><AthleteHistory /></RequireRole>} />
           <Route path="/athlete-guide" element={<RequireRole role="ATHLETE"><AthleteHowItWorks /></RequireRole>} />
         </Route>
 

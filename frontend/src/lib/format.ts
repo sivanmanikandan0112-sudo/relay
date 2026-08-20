@@ -54,9 +54,10 @@ export const BACKDATE_WINDOW_DAYS = 7;
  * bug for anyone west of UTC (i.e. every US timezone): from local evening
  * until UTC midnight, UTC's calendar day has already rolled over to
  * "tomorrow" while the athlete is still very much living in "today". An
- * evening check-in submitted with no explicit `day` (see AthleteCheckin.tsx
- * /AthleteRuns.tsx, which both now always pass this value through
- * explicitly rather than ever omitting it) would silently land on the
+ * evening check-in submitted with no explicit `day` (see AthleteCheckin.tsx,
+ * which now always passes this value through explicitly -- both for the
+ * check-in itself and any run logged alongside it -- rather than ever
+ * omitting it) would silently land on the
  * backend's UTC "today", which the *next* calendar day's local-morning
  * page load would then also call "today" -- pre-filling the form with
  * last night's answers as if already submitted, while the real

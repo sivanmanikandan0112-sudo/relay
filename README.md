@@ -47,8 +47,11 @@ relay/
 │   └── src/
 │       ├── pages/       Brief, Dashboard, Injuries, CoachInvites, How It Works,
 │       │                Login, ForgotPassword, ResetPassword, AcceptInvite,
-│       │                AthleteCheckin, AthleteRuns, AthleteHowItWorks
-│       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, InjuryModal, MatchingSection
+│       │                AthleteCheckin, AthleteHistory, AthleteHowItWorks
+│       ├── components/  Layout, Sparkline, DetailDrawer, NoteModal, InjuryModal, MatchingSection,
+│       │                AthleteStats, WorkloadAnalysis, CheckinHistoryGrid (shared coach/athlete)
+│       ├── hooks/        usePushNotifications, useReminderHour, useReadinessVisibility
+│       │                (shared between Profile.tsx and OnboardingSetup.tsx)
 │       ├── context/      AuthContext
 │       └── lib/          api.ts (REST client), status.ts, format.ts
 ├── docs/
@@ -69,13 +72,13 @@ Every login is a real account (`User`) with a `role` of `COACH` or `ATHLETE`:
   for anyone but themselves.
 - After login, coaches land on **Brief** and only see the Coach tabs (Brief / Dashboard / Injuries
   / Invite / How it works); athletes land on **Check-in** and only see the Athlete tabs (Check-in /
-  My Runs / How it works). There's no view-switcher — each role sees its own app.
+  History / How it works). There's no view-switcher — each role sees its own app.
 - **Athlete gender gate**: an athlete with no gender on file is blocked by a full-screen prompt
   right after login — they can't reach any other screen until they set it
   (`PATCH /api/me/gender`). Seeded athletes deliberately start with no gender set, so any athlete
   login demonstrates this.
 - **Coach-required gating**: an athlete not yet on *any* coach's roster (`hasCoach: false`) sees no
-  Check-in / My Runs / How it works tabs at all — just a "waiting on a coach" notice. Every seeded
+  Check-in / History / How it works tabs at all — just a "waiting on a coach" notice. Every seeded
   athlete is now assigned to a coach (see [Seeded logins](#seeded-logins)) so the app is fully
   interactive out of the box; to see this gate itself, unassign an athlete — e.g.
   `DELETE FROM "CoachAthlete" WHERE "athleteId" = (SELECT id FROM "Athlete" WHERE name = 'Ava Thompson');`
@@ -164,19 +167,72 @@ public `/join` page — and a coach approves or rejects that request before any 
 
 ### Backdating a check-in or run
 
-An athlete's Check-in and My Runs screens both have a **LOGGING FOR** day picker (defaulting to
-Today) so a missed day can be caught up on, not just today's. The backend accepts an optional
-`day` ("YYYY-MM-DD") on `POST /api/wellness` and `POST /api/training-load`, resolved by
+An athlete's Check-in screen has a **LOGGING FOR** day picker (defaulting to Today) so a missed
+day can be caught up on, not just today's — and since [check-ins and runs live on the same page
+now](#logging-a-run-lives-on-the-check-in-page-not-a-separate-tab), one picker catches up *both*
+for that day, not one at a time on two different screens. The backend accepts an optional `day`
+("YYYY-MM-DD") on `POST /api/wellness` and `POST /api/training-load`, resolved by
 [`lib/date.ts`](backend/src/lib/date.ts)'s `resolveSubmissionDay` — rejecting anything in the
 future or further back than `BACKDATE_WINDOW_DAYS` (currently 7, reusing `ACUTE_WINDOW_DAYS` from
 the scoring math rather than inventing a separate constant: a week is enough to catch up after a
 missed weekend without opening a wide-open history-editing surface, and it's already the exact
 window that drives the acute load calc). A backdated check-in still upserts on that day (one per
 athlete per day, same rule as today), and a backdated run still stacks freely with others on the
-same day (no per-day uniqueness for runs, unchanged). Submitting a backdated entry refreshes
-*today's* live readiness score as always, and additionally refreshes the backdated day's own
-week's stored `ReadinessScore` snapshot — otherwise a corrected day sitting in an earlier ISO week
-would never update the row the multi-week trend chart actually reads.
+same day (no per-day uniqueness for runs, unchanged — a two-a-day just means adding a run twice
+under the same picked day). Submitting a backdated entry refreshes *today's* live readiness score
+as always, and additionally refreshes the backdated day's own week's stored `ReadinessScore`
+snapshot — otherwise a corrected day sitting in an earlier ISO week would never update the row the
+multi-week trend chart actually reads.
+
+### Logging a run lives on the Check-in page, not a separate tab
+
+Runs used to only be loggable from their own **My Runs** tab — a real problem, not just an
+inconvenience, since RPE × duration is half of what the readiness pipeline's own load calc runs
+on ([`lib/scoring.ts`](backend/src/lib/scoring.ts)'s `effortCost`). An athlete could fully submit a
+check-in and never open the other tab, and the readiness score for that day would quietly compute
+on wellness alone, missing the training-load half of its own signal — with nothing anywhere
+telling them anything was incomplete.
+
+`AthleteCheckin.tsx` now has a "runs for [day]" section right below the check-in form, governed by
+the *same* `selectedDay` the check-in itself uses — no second, independent day picker. It shows
+whatever runs are already logged for that day (with a remove button each), and an "+ Add a run"
+button that reveals the same run-entry form (title, distance, duration, RPE,
+[`ConfirmRunModal`](frontend/src/components/ConfirmRunModal.tsx) confirmation) the old My Runs tab
+had — closing and reopening it (rather than clearing) after each save, so a two-a-day is just
+adding a second run under the same day, not a separate flow. A day with zero runs and just a
+check-in is never treated as incomplete — most rest days genuinely have no run to log, and the UI
+never implies otherwise (no "did you forget?" nag, just a plain "no runs logged — perfectly normal
+on a rest day").
+
+Matching a `TrainingLoad` row to the selected day needed real care: unlike `WellnessEntry`,
+`TrainingLoad` has no persisted local-day field, only a raw `date` timestamp — matching it with
+`r.date.slice(0, 10)` (always UTC) would silently reintroduce the exact same evening-timezone bug
+[fixed elsewhere in this app](#today-is-the-athletes-local-calendar-day-not-utc): an 8pm Central
+run logged today would slice to tomorrow's UTC date and vanish from today's list. Matched instead
+via `todayKey(new Date(r.date))` — the browser's own local calendar day for that run's timestamp,
+same function the day picker's own options already use.
+
+**My Runs** is now **History** (`AthleteHistory.tsx`, still at the `/runs` route — only the tab
+label and the page's own job changed, not the URL) — purely a read-only look back, not a place to
+log anything new. It reuses [`AthleteStats`](frontend/src/components/AthleteStats.tsx) and
+[`CheckinHistoryGrid`](frontend/src/components/CheckinHistoryGrid.tsx) (the exact same components
+the coach's own detail drawer uses — extracted from `DetailDrawer.tsx` into
+`CheckinHistoryGrid.tsx` specifically so both places share one implementation), just with a
+30-day window instead of the drawer's cramped 7-day one, since this is a full page an athlete
+visits specifically to look for a trend, not a side panel. `AthleteStats`'s own trend charts
+(distance/pace/RPE) aren't day-windowed at all — they already span an athlete's entire logged
+history — so the 30-day window only bounds the two literal day-by-day lists (check-ins, runs)
+below them.
+
+[`WorkloadAnalysis`](frontend/src/components/WorkloadAnalysis.tsx) — the acute/chronic/ACWR/risk
+numbers — is the one piece from the coach's drawer **deliberately left out unless the athlete has
+opted into seeing their own readiness score** (`user.readinessShared`, same flag as
+[Athlete readiness visibility](#athlete-readiness-visibility-self-service-off-by-default) below).
+Those numbers are colored by the exact same Fresh/Ease back/Back off band the readiness status
+itself uses — showing them unconditionally would quietly hand every athlete the same "number to
+manage toward" that opt-in exists specifically to keep hidden by default. `AthleteStats` itself
+(distance, pace, session count, average RPE, and their trend charts) has no such gate — that's an
+athlete looking at their own training log, not an overtraining signal in disguise.
 
 ### Check-in streak
 
@@ -190,18 +246,19 @@ missing *today* as not-yet-broken (there's still time left in the day) but a mis
 
 ### "Today" is the athlete's local calendar day, not UTC
 
-`lib/format.ts`'s `todayKey()` — what both the Check-in and My Runs pages call "today" — computes
-the browser's *local* calendar day (`now.getFullYear()`/`getMonth()`/`getDate()`), not
-`now.toISOString().slice(0, 10)` (always UTC), which is what it used to be. The old UTC version was
-a real, frequently-hit bug for anyone west of UTC (every US timezone): from local evening until
-UTC midnight, UTC's calendar day has already rolled over to "tomorrow" while the athlete is still
-very much living in "today" — for Central time that's roughly 7pm–midnight local, every single
-day, not a rare edge case. An evening check-in submitted with no explicit `day` (both pages used to
-omit it for "today", relying on the backend's own UTC `now` to decide) would silently land on
-tomorrow's bucket; the next calendar day's morning page load would then also call that same UTC
-day "today", pre-filling the form with last night's answers as if already submitted — while the
-real yesterday showed nothing at all. `AthleteCheckin.tsx` and `AthleteRuns.tsx` now both always
-pass `day` explicitly (the local `selectedDay` they already compute), never omitting it, so the
+`lib/format.ts`'s `todayKey()` — what `AthleteCheckin.tsx` calls "today", for both the check-in
+itself and any run logged alongside it — computes the browser's *local* calendar day
+(`now.getFullYear()`/`getMonth()`/`getDate()`), not `now.toISOString().slice(0, 10)` (always UTC),
+which is what it used to be. The old UTC version was a real, frequently-hit bug for anyone west of
+UTC (every US timezone): from local evening until UTC midnight, UTC's calendar day has already
+rolled over to "tomorrow" while the athlete is still very much living in "today" — for Central time
+that's roughly 7pm–midnight local, every single day, not a rare edge case. An evening check-in
+submitted with no explicit `day` (this page used to omit it for "today", relying on the backend's
+own UTC `now` to decide) would silently land on tomorrow's bucket; the next calendar day's morning
+page load would then also call that same UTC day "today", pre-filling the form with last night's
+answers as if already submitted — while the real yesterday showed nothing at all.
+`AthleteCheckin.tsx` now always passes `day` explicitly (the local `selectedDay` it already
+computes), never omitting it, so the
 backend's own `resolveSubmissionDay` ([`lib/date.ts`](backend/src/lib/date.ts)) never has to guess
 via its own UTC clock. No backend changes were needed — the backdating machinery described above
 already handled "resolved day differs from the server's own today" correctly, since that's exactly
@@ -806,12 +863,15 @@ row from the moment it's sent, not a dummy input: `GET /api/notes/athlete/:athle
 gated by the same `canAccessAthlete` every self-access endpoint uses, so the athlete themself can
 always read it back.
 
-The gap was purely on the frontend, and only a partial one: `AthleteRuns.tsx` (My Runs) already had
-a "NOTES FROM YOUR COACH" section rendering every note with the coach's name and date — but
-`AthleteCheckin.tsx`, the page an athlete actually lands on first, had none. A note only ever showed
-up if the athlete happened to visit My Runs too, which for anyone who mostly just checks in and
-leaves, they might never do. `AthleteCheckin.tsx` now fetches and renders the same section, in the
-same style, so a note reaches the athlete on the very page a coach's own workflow assumes it does.
+The gap was purely on the frontend, and only a partial one: the athlete's runs page (now
+`AthleteHistory.tsx`, then still `AthleteRuns.tsx`/"My Runs") already had a "NOTES FROM YOUR COACH"
+section rendering every note with the coach's name and date — but `AthleteCheckin.tsx`, the page an
+athlete actually lands on first, had none. A note only ever showed up if the athlete happened to
+visit the other page too, which for anyone who mostly just checks in and leaves, they might never
+do. `AthleteCheckin.tsx` now fetches and renders the same section, in the same style, so a note
+reaches the athlete on the very page a coach's own workflow assumes it does — still true after the
+runs page's own later rename and rewrite into History (see
+[Logging a run lives on the Check-in page](#logging-a-run-lives-on-the-check-in-page-not-a-separate-tab)).
 
 ### First-login setup — a one-time, skippable prompt
 
@@ -1072,7 +1132,7 @@ regardless of `needsCoach`) silently did nothing for these athletes; clicking it
 way to reach password/MFA settings, and — the two things that made this worth calling out — no way
 to export their data or delete an abandoned signup, for exactly the athletes most likely to want
 to. Fixed by exempting `/profile` specifically from that gate (`useLocation()` checked alongside
-`needsCoach`); every other athlete-only tab (Check-in, My Runs) still correctly stays hidden until
+`needsCoach`); every other athlete-only tab (Check-in, History) still correctly stays hidden until
 they're actually rostered, since those still wouldn't do anything useful yet.
 
 A second, related bug turned up while auditing for more of the same: `needsCoach` (and every other

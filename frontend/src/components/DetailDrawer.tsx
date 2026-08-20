@@ -9,11 +9,12 @@ import {
   type WellnessEntry,
 } from "../lib/api";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
-import { formatDuration, formatShortDate, initials, ratingColor, sorenessColor, todayKey, withinLastDays } from "../lib/format";
+import { formatDuration, formatShortDate, initials, todayKey, withinLastDays } from "../lib/format";
 import { NoteModal } from "./NoteModal";
 import { InjuryModal } from "./InjuryModal";
 import { AthleteStats } from "./AthleteStats";
 import { WorkloadAnalysis } from "./WorkloadAnalysis";
+import { CheckinHistoryGrid } from "./CheckinHistoryGrid";
 
 interface DetailDrawerProps {
   athleteId: string;
@@ -191,49 +192,7 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
           {athleteStats && <AthleteStats stats={athleteStats.stats} />}
           {athleteStats && <WorkloadAnalysis workload={athleteStats.workload} />}
 
-          <div className="drawer-section-label">CHECK-IN HISTORY · LAST 7 DAYS</div>
-          <div className="drawer-grid-panel">
-            <div className="drawer-grid-head">
-              <div />
-              <div>SLEEP</div>
-              <div>ENGY</div>
-              <div>MOOD</div>
-              <div>MOTIV</div>
-              <div>SORE</div>
-            </div>
-            {lastWeekWellness.map((r) => (
-              <div className="drawer-grid-row" key={r.id}>
-                <div className="drawer-grid-date">{formatShortDate(r.date)}</div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span className="drawer-chip" style={{ background: ratingColor(r.sleep) }}>
-                    {r.sleep}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span className="drawer-chip" style={{ background: ratingColor(r.energy) }}>
-                    {r.energy}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span className="drawer-chip" style={{ background: ratingColor(r.mood) }}>
-                    {r.mood}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span className="drawer-chip" style={{ background: ratingColor(r.motivation) }}>
-                    {r.motivation}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <span className="drawer-chip" style={{ background: sorenessColor(r.soreness) }}>
-                    {r.soreness}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {lastWeekWellness.length === 0 && <div className="drawer-legend">No check-ins in the last 7 days.</div>}
-            <div className="drawer-legend">green good · amber watch · red low — soreness inverted (high = worse)</div>
-          </div>
+          <CheckinHistoryGrid wellness={lastWeekWellness} windowLabel="LAST 7 DAYS" />
 
           {messages.length > 0 && (
             <>
