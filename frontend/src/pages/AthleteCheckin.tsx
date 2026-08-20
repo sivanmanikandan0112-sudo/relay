@@ -64,8 +64,28 @@ export function AthleteCheckin() {
     // page an athlete actually lands on first -- a note left only there
     // was too easy to never see at all.
     api.notesForAthlete(athleteId).then(setNotes);
+    refreshReadiness();
   }
 
+  // Split out from refresh() above so it can also be called by the
+  // opt-in effect below without duplicating the fetch -- but the real
+  // reason it needs to be callable from refresh() at all: a check-in or
+  // run submission recomputes this week's readiness server-side
+  // immediately, and this panel sits right above both forms on this same
+  // page. Without this, an athlete could submit either one and keep
+  // looking at a stale score/summary until they happened to reload --
+  // not a new problem this run-logging change created, but folding runs
+  // into this same page made the existing gap far more likely to
+  // actually be seen, so it's fixed here rather than left as-is.
+  function refreshReadiness() {
+    if (!user?.readinessShared) {
+      setReadiness(null);
+      return;
+    }
+    api.myReadiness().then((res) => setReadiness(res.latest));
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(refresh, [athleteId]);
 
   const isToday = selectedDay === todayKey();
@@ -125,15 +145,11 @@ export function AthleteCheckin() {
     setRpe(null);
   }, [selectedDay]);
 
-  // Only fetch if the athlete has opted in from Profile -- the endpoint
-  // itself also enforces this, this just avoids a pointless call otherwise.
-  useEffect(() => {
-    if (!user?.readinessShared) {
-      setReadiness(null);
-      return;
-    }
-    api.myReadiness().then((res) => setReadiness(res.latest));
-  }, [user?.readinessShared]);
+  // Also re-runs whenever the opt-in itself flips -- turning it on
+  // should show a real number immediately, not wait for the next
+  // check-in/run. refresh() above (called on mount and after every
+  // submission) is what keeps it current the rest of the time.
+  useEffect(refreshReadiness, [user?.readinessShared]);
 
   if (!athleteId) {
     return (
