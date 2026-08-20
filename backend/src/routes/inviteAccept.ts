@@ -128,6 +128,14 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
         schoolId: user.schoolId,
         schoolName: invite.school?.name ?? null,
         isSuperAdmin: false,
+        // A brand-new account, so these are always their schema
+        // defaults -- explicit here (rather than omitted, which
+        // happens to also evaluate correctly since undefined reads the
+        // same way) so this response shape doesn't quietly drift out of
+        // sync with what GET /api/me and /auth/login's buildSession
+        // both already return for the same two fields.
+        reminderHour: null,
+        onboardingCompletedAt: null,
       },
     });
   }
@@ -172,6 +180,9 @@ inviteAcceptRouter.post("/:token", async (req, res) => {
       schoolId: null,
       schoolName: null,
       isSuperAdmin: false,
+      // See the COACH_TO_SCHOOL branch above's own comment.
+      reminderHour: null,
+      onboardingCompletedAt: null,
     },
   });
 });

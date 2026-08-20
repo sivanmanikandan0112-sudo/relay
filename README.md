@@ -813,6 +813,45 @@ up if the athlete happened to visit My Runs too, which for anyone who mostly jus
 leaves, they might never do. `AthleteCheckin.tsx` now fetches and renders the same section, in the
 same style, so a note reaches the athlete on the very page a coach's own workflow assumes it does.
 
+### First-login setup — a one-time, skippable prompt
+
+Push notifications, reminder hour, and (athlete-only) readiness-score visibility all live
+permanently in **My Profile** — but nothing ever pointed a brand-new user there, so someone who
+never happened to go looking would never know push reminders existed at all.
+[`OnboardingSetup.tsx`](frontend/src/components/OnboardingSetup.tsx) shows these three, once, right
+after an account's very first login (after [`GenderGate`](frontend/src/components/GenderGate.tsx)
+for an athlete, since squad assignment has to be settled first) — same architecture as
+`GenderGate`, gated in `Layout.tsx` alongside it, but **skippable**: a "Skip for now — I'll do this
+later in My Profile" link sits right next to the real controls, and either path (save or skip)
+marks it done and never shows again. Unlike gender, forcing a decision on "do you want
+notifications?" before someone's even checked in once is worse UX than letting them defer it, so
+this deliberately doesn't block the way `GenderGate` does.
+
+Both roles get it — a coach's reminder-hour is genuinely worth surfacing immediately (a team in a
+different timezone than the 4pm default), and it shows regardless of whether a not-yet-rostered
+athlete has a coach yet, so it's out of the way for good the moment they finally do get one, rather
+than stacking a second interstitial on top of their first real check-in. Backed by
+`User.onboardingCompletedAt` (nullable `DateTime`, `POST /api/me/onboarding-complete` to stamp it) —
+shipping this **backfilled every pre-existing account's own `createdAt`** into that column as part
+of the migration itself, so the entire existing user base didn't suddenly see a "finish setting up"
+screen out of nowhere on their next ordinary login; only genuinely new signups going forward see it.
+
+The push-toggle, reminder-hour picker, and readiness-visibility checkbox are the exact same
+state/logic Profile.tsx already had — factored out into three shared hooks
+([`hooks/usePushNotifications.ts`](frontend/src/hooks/usePushNotifications.ts),
+[`useReminderHour.ts`](frontend/src/hooks/useReminderHour.ts),
+[`useReadinessVisibility.ts`](frontend/src/hooks/useReadinessVisibility.ts)) so both Profile.tsx and
+`OnboardingSetup.tsx` share one implementation instead of two copies of the same subscribe/save
+logic with different surrounding copy.
+
+While building this, `POST /api/auth/login`'s response (and the two account-creation-and-login-in-
+one-step paths in `routes/inviteAccept.ts`) turned out to already have been missing `reminderHour`
+from their own hand-built `user` object — present in `GET /api/me`'s response the whole time, never
+in the one a fresh login actually returns. Harmless in practice once
+[`Layout.tsx`'s own mount-time `/me` refetch](#data-export-and-account-deletion-self-service)
+fills it in moments later, but worth fixing directly rather than leaning on that refetch to paper
+over three independently-hand-built copies of the same response shape quietly drifting apart.
+
 ### Athlete readiness visibility (self-service, off by default)
 
 The readiness score is coach-only by default — deliberately, so an athlete's daily check-in stays
@@ -1211,6 +1250,7 @@ outside that set gets a 403. `/api/admin/*` further requires `isSuperAdmin`.
 | POST | `/api/me/push-subscription` | Save this device's Web Push subscription (both roles; 503 if VAPID isn't configured) |
 | DELETE | `/api/me/push-subscription` | Remove this device's subscription (scoped to your own account) |
 | PATCH | `/api/me/reminder-hour` | Set (0-23) or clear (`null`) your check-in-reminder hour — your own for an athlete, your roster's default for a coach; see [Push notifications](#push-notifications) |
+| POST | `/api/me/onboarding-complete` | Marks the one-time first-login setup screen as seen (finished or skipped, same effect); see [First-login setup](#first-login-setup--a-one-time-skippable-prompt) |
 | GET | `/api/me/export` | Download every row this app has stored under your own account, as one JSON document; see [Data export and account deletion](#data-export-and-account-deletion-self-service) |
 | DELETE | `/api/me` | Permanently anonymize your account (requires current password) — history stays, identity doesn't; see [Data export and account deletion](#data-export-and-account-deletion-self-service) |
 | GET | `/api/mfa/status` | Your own 2FA state: `{enabled, backupCodesRemaining}` |

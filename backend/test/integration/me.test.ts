@@ -171,6 +171,47 @@ describe("PATCH /api/me/reminder-hour", () => {
   });
 });
 
+describe("POST /api/me/onboarding-complete", () => {
+  it("is unset for a brand-new athlete, and GET /api/me reflects that", async () => {
+    await createAthlete({ username: "ath.onboard.new", firstName: "Brand", lastName: "New", squad: "GIRLS" });
+    const token = await loginAs("ath.onboard.new");
+
+    const me = await request(app).get("/api/me").set("Authorization", `Bearer ${token}`);
+    expect(me.body.onboardingCompletedAt).toBeNull();
+  });
+
+  it("stamps it, and GET /api/me reflects that afterward -- works for an athlete", async () => {
+    await createAthlete({ username: "ath.onboard.done", firstName: "All", lastName: "Done", squad: "GIRLS" });
+    const token = await loginAs("ath.onboard.done");
+
+    const res = await request(app).post("/api/me/onboarding-complete").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.onboardingCompletedAt).toBe(true);
+
+    const me = await request(app).get("/api/me").set("Authorization", `Bearer ${token}`);
+    expect(me.body.onboardingCompletedAt).not.toBeNull();
+  });
+
+  it("works for a coach too, not just an athlete", async () => {
+    await createCoach({ username: "coach.onboard.done", firstName: "Coach", lastName: "Done" });
+    const token = await loginAs("coach.onboard.done");
+
+    const res = await request(app).post("/api/me/onboarding-complete").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+
+    const me = await request(app).get("/api/me").set("Authorization", `Bearer ${token}`);
+    expect(me.body.onboardingCompletedAt).not.toBeNull();
+  });
+
+  it("is idempotent -- calling it twice doesn't error", async () => {
+    await createAthlete({ username: "ath.onboard.twice", firstName: "Twice", lastName: "Called", squad: "BOYS" });
+    const token = await loginAs("ath.onboard.twice");
+
+    expect((await request(app).post("/api/me/onboarding-complete").set("Authorization", `Bearer ${token}`)).status).toBe(200);
+    expect((await request(app).post("/api/me/onboarding-complete").set("Authorization", `Bearer ${token}`)).status).toBe(200);
+  });
+});
+
 describe("readiness visibility (self-service, athlete-owned)", () => {
   it("defaults to off: GET /api/me reports readinessShared false, GET /api/me/readiness reports shared false with no score", async () => {
     const { athlete } = await createAthlete({ username: "ath.ready.default", firstName: "Ath", lastName: "Default", squad: "GIRLS" });

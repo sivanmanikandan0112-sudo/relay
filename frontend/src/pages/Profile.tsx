@@ -3,17 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { renderGoogleButton } from "../lib/google";
-import { PUSH_CONFIGURED, getExistingSubscription, pushSupported, subscribeToPush, unsubscribeFromPush } from "../lib/push";
-import { formatHour } from "../lib/format";
+import { PUSH_CONFIGURED, pushSupported } from "../lib/push";
+import { DEFAULT_REMINDER_HOUR, REMINDER_HOUR_OPTIONS, formatHour } from "../lib/format";
+import { usePushNotifications } from "../hooks/usePushNotifications";
+import { useReminderHour } from "../hooks/useReminderHour";
+import { useReadinessVisibility } from "../hooks/useReadinessVisibility";
 
 const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
-// Mirrors backend's lib/pushReminder.ts DEFAULT_REMINDER_HOUR -- the
-// fallback hour once neither an athlete nor any of their coaches has set
-// a preference, shown here purely as display copy ("Same as your coach's
-// default (4:00 PM)"), never sent back to the server itself (the server
-// is the one source of truth for what "no preference set" resolves to).
-const DEFAULT_REMINDER_HOUR = 16;
-const REMINDER_HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 
 export function Profile() {
   const { user, updateUser, logout } = useAuth();
@@ -39,24 +35,16 @@ export function Profile() {
   const [disableError, setDisableError] = useState<string | null>(null);
   const [disabling, setDisabling] = useState(false);
 
-  // --- Readiness visibility (athlete-only) ----------------------------
-  const [readinessSaving, setReadinessSaving] = useState(false);
-  const [readinessError, setReadinessError] = useState<string | null>(null);
+  // --- Readiness visibility, push notifications, reminder hour --------
+  // Shared with OnboardingSetup.tsx's one-time first-login prompt --
+  // same underlying state machines, different surrounding copy.
+  const { readinessSaving, readinessError, handleToggleReadinessSharing } = useReadinessVisibility();
+  const { pushEndpoint, pushChecked, pushSaving, pushError, handleTogglePush } = usePushNotifications();
+  const { reminderSaving, reminderError, handleSetReminderHour } = useReminderHour();
 
   // --- Google sign-in link --------------------------------------------
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState(false);
-
-  // --- Push notifications (athlete-only) -------------------------------
-  const [pushEndpoint, setPushEndpoint] = useState<string | null>(null); // this device's current subscription, if any -- null until checked
-  const [pushChecked, setPushChecked] = useState(false);
-  const [pushSaving, setPushSaving] = useState(false);
-  const [pushError, setPushError] = useState<string | null>(null);
-
-  // --- Reminder hour (both roles -- athlete's own override, or a
-  // coach's default for their roster) -----------------------------------
-  const [reminderSaving, setReminderSaving] = useState(false);
-  const [reminderError, setReminderError] = useState<string | null>(null);
 
   // --- Your data: export + delete account (both roles) -----------------
   const [exporting, setExporting] = useState(false);
@@ -71,41 +59,6 @@ export function Profile() {
   }
 
   useEffect(refreshMfaStatus, []);
-
-  // Reads this device's actual current subscription state from the
-  // browser (not from the backend -- the backend only knows what was
-  // last POSTed, but the source of truth for "is this device subscribed
-  // right now" is the Push API itself, e.g. after the user cleared site
-  // data or revoked the permission outside the app).
-  useEffect(() => {
-    if (user?.role !== "ATHLETE" || !PUSH_CONFIGURED || !pushSupported()) {
-      setPushChecked(true);
-      return;
-    }
-    getExistingSubscription()
-      .then((sub) => setPushEndpoint(sub?.endpoint ?? null))
-      .finally(() => setPushChecked(true));
-  }, [user?.role]);
-
-  async function handleTogglePush(enable: boolean) {
-    setPushError(null);
-    setPushSaving(true);
-    try {
-      if (enable) {
-        const subscription = await subscribeToPush();
-        await api.subscribePush(subscription);
-        setPushEndpoint(subscription.endpoint);
-      } else if (pushEndpoint) {
-        await api.unsubscribePush(pushEndpoint);
-        await unsubscribeFromPush();
-        setPushEndpoint(null);
-      }
-    } catch (err) {
-      setPushError(err instanceof Error ? err.message : "Couldn't save that");
-    } finally {
-      setPushSaving(false);
-    }
-  }
 
   // Only renders a button while not already linked -- a no-op if
   // VITE_GOOGLE_CLIENT_ID isn't set (see lib/google.ts).
@@ -186,33 +139,6 @@ export function Profile() {
       setSetupError(err instanceof Error ? err.message : "Invalid code. Try again.");
     } finally {
       setSetupSubmitting(false);
-    }
-  }
-
-  async function handleToggleReadinessSharing(share: boolean) {
-    setReadinessError(null);
-    setReadinessSaving(true);
-    try {
-      await api.setReadinessVisibility(share);
-      updateUser({ readinessShared: share });
-    } catch (err) {
-      setReadinessError(err instanceof Error ? err.message : "Couldn't save that");
-    } finally {
-      setReadinessSaving(false);
-    }
-  }
-
-  async function handleSetReminderHour(raw: string) {
-    const hour = raw === "" ? null : Number(raw);
-    setReminderError(null);
-    setReminderSaving(true);
-    try {
-      await api.setReminderHour(hour);
-      updateUser({ reminderHour: hour });
-    } catch (err) {
-      setReminderError(err instanceof Error ? err.message : "Couldn't save that");
-    } finally {
-      setReminderSaving(false);
     }
   }
 

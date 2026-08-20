@@ -102,6 +102,16 @@ model User {
   // whatever this athlete/coach falls back to" -- ultimately
   // DEFAULT_REMINDER_HOUR if nobody in the chain has set one.
   reminderHour  Int?
+  // Set the first time this user finishes (or explicitly skips) the
+  // one-time "finish setting up" screen shown right after their very
+  // first login (push notifications, reminder hour, and -- athletes
+  // only -- readiness-score visibility; see OnboardingSetup.tsx). Null
+  // means "hasn't seen it yet" -- both finishing and skipping stamp this
+  // the same way, since either one means "don't show it again," not
+  // "they made every choice." Everything it offers also lives in My
+  // Profile permanently, so this is purely a one-time nudge, never the
+  // only place any of these can be changed.
+  onboardingCompletedAt DateTime?
   athlete       Athlete?
   notes         Note[]
   coachAthletes CoachAthlete[]

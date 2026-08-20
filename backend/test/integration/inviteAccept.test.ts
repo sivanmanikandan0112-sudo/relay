@@ -154,6 +154,10 @@ describe("POST /api/invite-accept/:token", () => {
     expect(res.status).toBe(201);
     expect(res.body.token).toEqual(expect.any(String));
     expect(res.body.user).toMatchObject({ username: "new.kid", role: "ATHLETE", gender: "MALE", hasCoach: true });
+    // Same fields the login response and GET /api/me both already
+    // return -- this response shape used to omit them entirely.
+    expect(res.body.user).toHaveProperty("reminderHour", null);
+    expect(res.body.user).toHaveProperty("onboardingCompletedAt", null);
 
     const athlete = await prisma.athlete.findUnique({ where: { id: res.body.user.athleteId }, include: { squad: true } });
     expect(athlete?.gender).toBe("MALE");
@@ -305,6 +309,8 @@ describe("POST /api/invite-accept/:token -- COACH_TO_SCHOOL, new account", () =>
     });
     expect(res.status).toBe(201);
     expect(res.body.user).toMatchObject({ role: "COACH", schoolId: school.id, isSuperAdmin: false, athleteId: null });
+    expect(res.body.user).toHaveProperty("reminderHour", null);
+    expect(res.body.user).toHaveProperty("onboardingCompletedAt", null);
 
     const created = await prisma.user.findUnique({ where: { username: "brand.new" } });
     expect(created?.role).toBe("COACH");

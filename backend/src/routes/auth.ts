@@ -73,6 +73,17 @@ async function buildSession(user: User & { school: School | null }) {
       isSuperAdmin: user.isSuperAdmin,
       mfaEnabled: user.totpEnabled,
       googleLinked: !!user.googleId,
+      // Both of these were missing here even though GET /api/me already
+      // returns them -- harmless in practice since Layout.tsx now
+      // refetches /me on mount and fills them in moments later (see its
+      // own comment on why that exists), but omitting them here meant a
+      // brand-new login would flash the wrong onboarding gate for a beat
+      // (undefined onboardingCompletedAt reads as "needs onboarding",
+      // even for someone who already finished it on another device)
+      // before that refetch resolved. Cheap to fix here directly instead
+      // of leaning on the refetch to paper over it.
+      reminderHour: user.reminderHour,
+      onboardingCompletedAt: user.onboardingCompletedAt,
     },
   };
 }

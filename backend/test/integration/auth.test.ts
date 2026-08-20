@@ -27,6 +27,19 @@ describe("POST /api/auth/login", () => {
     expect(user).toBeTruthy();
   });
 
+  it("includes reminderHour and onboardingCompletedAt in the login response, not just GET /api/me -- both null for a fresh account", async () => {
+    // Both fields used to be built independently here from GET /api/me's
+    // own response shape and quietly fell out of sync -- a fresh login
+    // would omit them entirely (undefined) until Layout.tsx's own
+    // mount-time /me refetch caught up moments later. Asserted directly
+    // here so that drift can't silently reappear.
+    await createCoach({ username: "coach.loginfields", firstName: "Login", lastName: "Fields" });
+    const res = await request(app).post("/api/auth/login").send({ username: "coach.loginfields", password: TEST_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(res.body.user).toHaveProperty("reminderHour", null);
+    expect(res.body.user).toHaveProperty("onboardingCompletedAt", null);
+  });
+
   it("rejects a wrong password with 401, not 200 with a bad token", async () => {
     await createCoach({ username: "coach.test", firstName: "Coach", lastName: "Test" });
     const res = await request(app).post("/api/auth/login").send({ username: "coach.test", password: "totally-wrong" });

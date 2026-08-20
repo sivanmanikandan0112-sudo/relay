@@ -4,6 +4,7 @@ import { api, type Squad } from "../lib/api";
 import { currentIsoWeek } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
 import { GenderGate } from "./GenderGate";
+import { OnboardingSetup } from "./OnboardingSetup";
 import { NoCoachNotice } from "./NoCoachNotice";
 import { Footer } from "./Footer";
 
@@ -54,6 +55,14 @@ export function Layout() {
   const isCoach = user?.role === "COACH";
   const isAthlete = user?.role === "ATHLETE";
   const needsGender = isAthlete && !user?.gender;
+  // Both roles, shown exactly once right after the account's very first
+  // login (after gender is settled, for an athlete) -- see
+  // OnboardingSetup.tsx's own comment on why this is skippable, unlike
+  // needsGender above. Coach-less athletes still get this before
+  // NoCoachNotice, not after, so it's out of the way for good the
+  // moment they finally do get a coach, rather than stacking a second
+  // interstitial on top of their very first real check-in.
+  const needsOnboarding = !user?.onboardingCompletedAt;
   const needsCoach = isAthlete && !!user?.gender && !user?.hasCoach;
   // Profile is exempt from the "waiting on a coach" gate below -- the
   // topbar's own "My Profile" link is always visible regardless of
@@ -80,8 +89,12 @@ export function Layout() {
     navigate("/login", { replace: true });
   }
 
-  // Required at login, before any of the rest of the app is usable.
+  // needsGender is a hard block, before any of the rest of the app is
+  // usable. needsOnboarding isn't -- OnboardingSetup has its own "Skip
+  // for now" that clears this exact same flag, it just isn't skipped
+  // silently by never showing up at all.
   if (needsGender) return <GenderGate />;
+  if (needsOnboarding) return <OnboardingSetup />;
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "short", year: "numeric" });

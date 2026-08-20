@@ -148,11 +148,20 @@ export function formatPace(minPerMile: number): string {
   return `${m}:${String(s).padStart(2, "0")}/mi`;
 }
 
-// Hour-of-day (0-23) -> "4:00 PM", for the reminder-hour picker on
-// Profile.tsx. Mirrors backend's User.reminderHour -- an on-the-hour
-// value, no minutes, so this always renders ":00".
+// Hour-of-day (0-23) -> "4:00 PM", for the reminder-hour picker shared
+// by Profile.tsx and OnboardingSetup.tsx. Mirrors backend's
+// User.reminderHour -- an on-the-hour value, no minutes, so this always
+// renders ":00".
 export function formatHour(hour: number): string {
   const period = hour < 12 ? "AM" : "PM";
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
   return `${twelve}:00 ${period}`;
 }
+
+// Mirrors backend's lib/pushReminder.ts DEFAULT_REMINDER_HOUR -- the
+// fallback hour once neither an athlete nor any of their coaches has set
+// a preference, shown as display copy only ("Same as your coach's
+// default (4:00 PM)"), never sent back to the server itself (the server
+// is the one source of truth for what "no preference set" resolves to).
+export const DEFAULT_REMINDER_HOUR = 16;
+export const REMINDER_HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);

@@ -55,6 +55,7 @@ meRouter.get("/", async (req, res) => {
     mfaEnabled: user.totpEnabled,
     googleLinked: !!user.googleId,
     reminderHour: user.reminderHour,
+    onboardingCompletedAt: user.onboardingCompletedAt,
   });
 });
 
@@ -178,6 +179,17 @@ meRouter.patch("/reminder-hour", async (req, res) => {
   }
   await prisma.user.update({ where: { id: req.user!.sub }, data: { reminderHour: parsed.data.hour } });
   res.json({ reminderHour: parsed.data.hour, default: DEFAULT_REMINDER_HOUR });
+});
+
+// Marks the one-time "finish setting up" screen (OnboardingSetup.tsx) as
+// seen -- called whether the user actually changed anything or hit
+// "Skip for now", since either one means the same thing: don't show
+// this again. No body -- nothing to validate, just a timestamp stamp.
+// Safe to call more than once (e.g. a double-click); each call just
+// re-stamps the same "already done" state.
+meRouter.post("/onboarding-complete", async (req, res) => {
+  await prisma.user.update({ where: { id: req.user!.sub }, data: { onboardingCompletedAt: new Date() } });
+  res.json({ onboardingCompletedAt: true });
 });
 
 const googleLinkSchema = z.object({ idToken: z.string().min(1) });
