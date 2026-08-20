@@ -317,19 +317,8 @@ export function AthleteCheckin() {
             </span>
           </div>
         )}
-      </div>
 
-      {submitted && (
-        <div className="confirm-banner">
-          <span className="icon">✓</span>
-          <div className="text">
-            Logged. We deliberately don't show you your running average here — so today's rating is honest,
-            not nudged toward yesterday's. Your coach sees the pattern.
-          </div>
-        </div>
-      )}
-
-      <div className="checkin-panel" style={{ marginTop: 16 }}>
+        <div className="checkin-divider" />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div className="field-hint" style={{ margin: 0 }}>
             {isToday ? "TODAY'S RUNS" : `RUNS · ${dayLabel(selectedDay).toUpperCase()}`}
@@ -480,6 +469,16 @@ export function AthleteCheckin() {
           </div>
         )}
       </div>
+
+      {submitted && (
+        <div className="confirm-banner">
+          <span className="icon">✓</span>
+          <div className="text">
+            Logged. We deliberately don't show you your running average here — so today's rating is honest,
+            not nudged toward yesterday's. Your coach sees the pattern.
+          </div>
+        </div>
+      )}
 
       {notes.length > 0 && (
         <>
