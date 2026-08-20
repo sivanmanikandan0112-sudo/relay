@@ -470,6 +470,47 @@ on purpose — coach accounts are now only ever created by an admin running
 The coach card on the landing page is informational only, with no button, and points a coach who
 already has an account at **Sign in**.
 
+### Search indexing — what's discoverable, what isn't
+
+Three routes are meant to show up in search results and preview well when shared:
+[`/`](frontend/src/pages/Home.tsx) (the landing page), [`/join`](frontend/src/pages/Join.tsx) (the
+school join-code flow — a legitimate public discovery path, e.g. a coach texting an athlete "search
+Relay and use code X" instead of a direct link), and
+[`/data-policy`](frontend/src/pages/DataPolicy.tsx) (a real privacy page, normal and expected to be
+indexable the same way any site's privacy policy is). Every other route is either behind
+`RequireAuth` or a single-use tokenized link (`/accept-invite/:token`, `/reset-password`) that has
+no business showing up in a search result — not because it needs new protection (the actual access
+control is still `RequireAuth`/JWT, entirely server-side and unrelated to any of this), but so a
+login-walled or expired-link URL never becomes a dead link sitting in someone's search history.
+
+[`public/robots.txt`](frontend/public/robots.txt) enforces this **deny-by-default**, not
+allow-by-default: `Disallow: /` blocks everything, and only `Allow: /$`, `Allow: /join$`, and
+`Allow: /data-policy$` (the trailing `$` anchors each to an *exact* path match, both supported by
+Google's own robots.txt parser) carve out the three indexable routes. This app has roughly a dozen
+other authenticated routes (`/brief`, `/dashboard`, `/checkin`, `/admin/*`, ...) that an
+allow-by-default-plus-selective-`Disallow` approach would have to enumerate and keep in sync by
+hand — miss one, and it's silently crawlable. Deny-by-default means any new authenticated route
+added later is automatically excluded with zero extra work, which is the actual property this
+feature is supposed to guarantee. [`public/sitemap.xml`](frontend/public/sitemap.xml) lists the
+same three URLs, referenced from `robots.txt`'s own `Sitemap:` line.
+
+`index.html` carries a meta description, canonical URL, Open Graph, and Twitter Card tags for link
+previews — the description text is copied verbatim from `Home.tsx`'s own hero copy rather than
+written fresh, so a search snippet and the actual landing page never say two different things about
+what this app is. `og:image`/`twitter:image` point at the existing `icon-512.png` — a square app
+icon, not a proper 1200×630 social card, fine for launch but a real OG image is a nice-to-have, not
+done here. Since this is a client-rendered SPA with one static `index.html`, all three indexable
+pages share that one `<title>` by default; each of the three (`Home.tsx`, `Join.tsx`,
+`DataPolicy.tsx`) sets `document.title` itself on mount so a tab or search result reflects which
+page it actually is, and so navigating between them client-side (no full page reload) doesn't leave
+one page's title stuck on-screen for another.
+
+Getting Google to actually notice and crawl this is a manual, one-time step outside the
+codebase — add and verify the production domain in
+[Google Search Console](https://search.google.com/search-console), submit the sitemap URL there
+directly, and use the URL Inspection tool on `/` to confirm Google's crawler can render the SPA
+shell rather than getting stuck on a blank page before the JS bundle loads.
+
 ### Progressive Web App
 
 The frontend is installable — "Add to Home Screen" on a phone, or the install icon in a desktop

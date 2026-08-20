@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Relay — overreaching radar</title>
 
+    <!-- Search/share metadata for the SPA shell. Only meaningful for the
+         handful of routes actually indexable (see public/robots.txt) --
+         every other route sits behind client-side auth, so a search
+         result or link preview for one of those would only ever resolve
+         to a login wall, not real content. The description text below
+         is copied verbatim from Home.tsx's own hero copy, not written
+         fresh here, so search snippets and the actual landing page never
+         say two different things about what this app is. -->
+    <meta
+      name="description"
+      content="Relay catches overtraining before it becomes an injury — turning a daily check-in and logged runs into one honest signal for the coach of a high school track or cross country team."
+    />
+    <link rel="canonical" href="https://relaycoach.app/" />
+
+    <!-- Open Graph: how a shared link previews in iMessage/Slack/social. -->
+    <meta property="og:title" content="Relay — overreaching radar" />
+    <meta
+      property="og:description"
+      content="Relay catches overtraining before it becomes an injury — turning a daily check-in and logged runs into one honest signal for the coach of a high school track or cross country team."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://relaycoach.app/" />
+    <!-- icon-512.png is a square app icon, not a proper 1200x630 social
+         card -- good enough for launch; a real OG image is a nice-to-have,
+         not a blocker. -->
+    <meta property="og:image" content="https://relaycoach.app/icon-512.png" />
+
+    <!-- Twitter/X card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Relay — overreaching radar" />
+    <meta
+      name="twitter:description"
+      content="Relay catches overtraining before it becomes an injury — turning a daily check-in and logged runs into one honest signal for the coach of a high school track or cross country team."
+    />
+    <meta name="twitter:image" content="https://relaycoach.app/icon-512.png" />
+
     <!-- PNG only -- there's no vector source for this logo (the real
          artwork is a photo/export, see public/logo-source.jpg), so every
          icon reference in this app is a raster derivative of it rather

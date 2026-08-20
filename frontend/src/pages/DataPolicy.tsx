@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Footer } from "../components/Footer";
@@ -10,6 +11,13 @@ import { Footer } from "../components/Footer";
 // counsel review this before treating it as their official policy.
 export function DataPolicy() {
   const { user } = useAuth();
+
+  // See Home.tsx's own comment on why each of the three indexable pages
+  // (robots.txt) sets this itself rather than relying on index.html's
+  // static default.
+  useEffect(() => {
+    document.title = "Data & Privacy — Relay";
+  }, []);
 
   return (
     <div className="login-screen" style={{ alignItems: "flex-start", padding: "56px 24px" }}>

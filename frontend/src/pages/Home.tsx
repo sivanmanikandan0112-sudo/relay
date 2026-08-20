@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Footer } from "../components/Footer";
@@ -21,6 +22,17 @@ const ATHLETE_POINTS = [
 // to work (no public-facing page existed before this).
 export function Home() {
   const { user } = useAuth();
+
+  // index.html's static <title> already matches this, but the SPA never
+  // resets it between client-side navigations -- landing here *from*
+  // Join or Data & Privacy (both set their own) would otherwise leave
+  // whichever title one of those set behind. Setting it explicitly on
+  // every one of the three indexable pages (see robots.txt) keeps the
+  // tab/search-result title accurate regardless of how someone arrived.
+  useEffect(() => {
+    document.title = "Relay — overreaching radar";
+  }, []);
+
   if (user) return <Navigate to={user.role === "COACH" ? "/brief" : "/checkin"} replace />;
 
   return (

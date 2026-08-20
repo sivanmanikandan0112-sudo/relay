@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type Gender } from "../lib/api";
 
@@ -23,6 +23,13 @@ const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
 // coach at that school has to approve first (see schema.prisma's
 // comment on SchoolJoinRequest for why).
 export function Join() {
+  // See Home.tsx's own comment on why each of the three indexable pages
+  // (robots.txt) sets this itself rather than relying on index.html's
+  // static default.
+  useEffect(() => {
+    document.title = "Join your team — Relay";
+  }, []);
+
   const [code, setCode] = useState("");
   const [schoolName, setSchoolName] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
