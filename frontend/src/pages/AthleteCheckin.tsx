@@ -318,22 +318,6 @@ export function AthleteCheckin() {
           onChange={(e) => setMsg(e.target.value)}
           placeholder="e.g. Right shin a little tender on the downhills."
         />
-        <button className="checkin-submit" disabled={saving} onClick={handleSubmit}>
-          {saving
-            ? "Saving…"
-            : submitted
-              ? `Update ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`
-              : `Submit ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`}
-        </button>
-        {submitted && (
-          <div className="checkin-confirm">
-            <span>✓</span>
-            <span>
-              {isToday ? "Today's" : `${dayLabel(selectedDay)}'s`} check-in is in — change anything above and update it anytime.
-            </span>
-          </div>
-        )}
-
         <div className="checkin-divider" />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div className="field-hint" style={{ margin: 0 }}>
@@ -482,6 +466,23 @@ export function AthleteCheckin() {
                 Add a title, a duration, and pick how hard it felt to log the run.
               </div>
             )}
+          </div>
+        )}
+
+        <div className="checkin-divider" />
+        <button className="checkin-submit" disabled={saving} onClick={handleSubmit}>
+          {saving
+            ? "Saving…"
+            : submitted
+              ? `Update ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`
+              : `Submit ${isToday ? "today's" : `${dayLabel(selectedDay).toLowerCase()}'s`} check-in`}
+        </button>
+        {submitted && (
+          <div className="checkin-confirm">
+            <span>✓</span>
+            <span>
+              {isToday ? "Today's" : `${dayLabel(selectedDay)}'s`} check-in is in — change anything above and update it anytime.
+            </span>
           </div>
         )}
       </div>
