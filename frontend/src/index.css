@@ -384,6 +384,8 @@ input.ath-input, select.ath-input {
 .drawer-grid-row { display: grid; grid-template-columns: 46px repeat(5, 1fr); gap: 5px; align-items: center; margin-bottom: 6px; }
 .drawer-grid-date { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim-2); }
 .drawer-chip { width: 26px; height: 26px; border-radius: 7px; color: var(--bg); font-family: var(--font-display); font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+.drawer-grid-row-gap { opacity: .5; }
+.drawer-grid-gap-note { grid-column: 2 / -1; text-align: center; font-family: var(--font-mono); font-size: 10px; font-style: italic; color: var(--text-faint); }
 .drawer-legend { font-family: var(--font-mono); font-size: 9px; color: var(--text-faint); margin-top: 6px; line-height: 1.5; }
 .drawer-msg-card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid #b98a9a; border-radius: 9px; padding: 10px 12px; }
 .drawer-run-card { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; }

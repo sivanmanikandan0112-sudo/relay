@@ -192,7 +192,12 @@ export function DetailDrawer({ athleteId, onClose, onRemoved, onChanged }: Detai
           {athleteStats && <AthleteStats stats={athleteStats.stats} />}
           {athleteStats && <WorkloadAnalysis workload={athleteStats.workload} />}
 
-          <CheckinHistoryGrid wellness={lastWeekWellness} windowLabel="LAST 7 DAYS" />
+          {/* Full wellness history, not the 7-day-filtered lastWeekWellness
+              above -- the grid derives its own exact calendar-day window
+              internally (recentDayOptions), so it can't be thrown off by
+              withinLastDays' rolling 24h cutoff possibly excluding a real
+              entry right at the window's boundary. */}
+          <CheckinHistoryGrid wellness={wellness} windowDays={7} showComplianceCount />
 
           {messages.length > 0 && (
             <>

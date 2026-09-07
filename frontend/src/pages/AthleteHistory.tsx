@@ -53,7 +53,6 @@ export function AthleteHistory() {
     refresh();
   }
 
-  const recentWellness = wellness.filter((w) => withinLastDays(w.date, HISTORY_WINDOW_DAYS));
   const recentRuns = runs.filter((r) => withinLastDays(r.date, HISTORY_WINDOW_DAYS));
 
   return (
@@ -76,7 +75,13 @@ export function AthleteHistory() {
       {user?.readinessShared && stats && <WorkloadAnalysis workload={stats.workload} />}
 
       <div style={{ marginTop: 20 }}>
-        <CheckinHistoryGrid wellness={recentWellness} windowLabel={`LAST ${HISTORY_WINDOW_DAYS} DAYS`} />
+        {/* Full wellness history passed in, not a pre-filtered slice --
+            the grid derives its own exact calendar-day window internally
+            (recentDayOptions), so it can correctly tell "checked in" from
+            "gap" for every day in that window without depending on
+            withinLastDays' rolling 24h cutoff possibly excluding a real
+            entry right at the boundary. */}
+        <CheckinHistoryGrid wellness={wellness} windowDays={HISTORY_WINDOW_DAYS} />
       </div>
 
       <div className="field-hint" style={{ margin: "20px 0 8px" }}>
