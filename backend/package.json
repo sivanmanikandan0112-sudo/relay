@@ -20,6 +20,7 @@
     "inspect": "tsx scripts/inspect-athlete.ts",
     "verify-roster": "tsx scripts/verify-roster-integrity.ts",
     "create-account": "tsx scripts/create-account.ts",
+    "list-users": "tsx scripts/list-users.ts",
     "seed-squads": "tsx scripts/seed-squads.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

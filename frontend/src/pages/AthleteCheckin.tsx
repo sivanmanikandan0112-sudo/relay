@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Note, type ReadinessScoreRecord, type Run, type WellnessEntry } from "../lib/api";
 import { computeStreak, dayLabel, formatDuration, formatShortDate, recentDayOptions, todayKey } from "../lib/format";
 import { STATUS_COLOR, STATUS_LABEL, dataConfidence, scoreIsMeaningful } from "../lib/status";
@@ -23,6 +23,48 @@ function roundDistance(text: string): number | undefined {
   const n = Number(text);
   if (!text.trim() || Number.isNaN(n)) return undefined;
   return Math.round(n * 100) / 100;
+}
+
+// --- Distance / duration / pace cross-fill -------------------------------
+// Three fields, two independent quantities (duration = distance × pace) --
+// whichever two the athlete has most recently typed into by hand are
+// treated as the real inputs, and the field that's gone longest untouched
+// is the one that gets (re)computed from them. RunField tracks that
+// recency order; a plain-value helper per field returns undefined instead
+// of 0/NaN so "not filled in yet" and "explicitly zero" can't be confused
+// with a real, computable value.
+type RunField = "distance" | "duration" | "pace";
+
+function distanceValue(text: string): number | undefined {
+  const n = Number(text);
+  return text.trim() && !Number.isNaN(n) && n > 0 ? n : undefined;
+}
+
+function durationValue(hh: string, mm: string, ss: string): number | undefined {
+  const n = Number(hh) * 60 + Number(mm) + Number(ss) / 60;
+  return n > 0 ? n : undefined;
+}
+
+function paceValue(min: string, sec: string): number | undefined {
+  const n = Number(min) + Number(sec) / 60;
+  return n > 0 ? n : undefined;
+}
+
+// Fractional minutes -> {hh, mm, ss} strings, for writing a computed
+// duration back into the same three sub-fields the athlete types into.
+function partsFromDuration(totalMin: number): { hh: string; mm: string; ss: string } {
+  const totalSeconds = Math.round(totalMin * 60);
+  return {
+    hh: String(Math.floor(totalSeconds / 3600)),
+    mm: String(Math.floor((totalSeconds % 3600) / 60)),
+    ss: String(totalSeconds % 60),
+  };
+}
+
+// Fractional minutes-per-mile -> {min, sec} strings, same idea for pace.
+function partsFromPace(paceMinPerMile: number): { min: string; sec: string } {
+  const totalSeconds = Math.round(paceMinPerMile * 60);
+  return { min: String(Math.floor(totalSeconds / 60)), sec: String(totalSeconds % 60) };
 }
 
 export function AthleteCheckin() {
@@ -52,9 +94,44 @@ export function AthleteCheckin() {
   const [hh, setHh] = useState("0");
   const [mm, setMm] = useState("0");
   const [ss, setSs] = useState("0");
+  const [paceMin, setPaceMin] = useState("0");
+  const [paceSec, setPaceSec] = useState("0");
   const [rpe, setRpe] = useState<number | null>(null);
   const [confirmingRun, setConfirmingRun] = useState(false);
   const [savingRun, setSavingRun] = useState(false);
+
+  // Most-recently-edited first. Only a field the athlete actually typed
+  // into moves to the front (see recomputeRunField below) -- a value this
+  // logic auto-fills never bumps itself back to the top, or every edit
+  // would just make itself the next thing recomputed away.
+  const runFieldOrder = useRef<RunField[]>(["distance", "duration", "pace"]);
+
+  // Call right after updating the state for `field` with `overrides`
+  // (the new value(s), since the setState call(s) that made this true
+  // haven't landed yet by the time this runs). Recomputes whichever of
+  // the other two fields has gone longest untouched, from the two most
+  // recently hand-edited ones -- see the RunField comment above.
+  function recomputeRunField(field: RunField, overrides: Partial<{ distance: string; hh: string; mm: string; ss: string; paceMin: string; paceSec: string }>) {
+    runFieldOrder.current = [field, ...runFieldOrder.current.filter((f) => f !== field)];
+    const stale = runFieldOrder.current[2];
+
+    const d = distanceValue(overrides.distance ?? distance);
+    const dur = durationValue(overrides.hh ?? hh, overrides.mm ?? mm, overrides.ss ?? ss);
+    const pace = paceValue(overrides.paceMin ?? paceMin, overrides.paceSec ?? paceSec);
+
+    if (stale === "distance" && dur != null && pace != null) {
+      setDistance((dur / pace).toFixed(2));
+    } else if (stale === "duration" && d != null && pace != null) {
+      const parts = partsFromDuration(d * pace);
+      setHh(parts.hh);
+      setMm(parts.mm);
+      setSs(parts.ss);
+    } else if (stale === "pace" && d != null && dur != null) {
+      const parts = partsFromPace(dur / d);
+      setPaceMin(parts.min);
+      setPaceSec(parts.sec);
+    }
+  }
 
   function refresh() {
     if (!athleteId) return;
@@ -142,6 +219,9 @@ export function AthleteCheckin() {
     setHh("0");
     setMm("0");
     setSs("0");
+    setPaceMin("0");
+    setPaceSec("0");
+    runFieldOrder.current = ["distance", "duration", "pace"];
     setRpe(null);
   }, [selectedDay]);
 
@@ -205,6 +285,9 @@ export function AthleteCheckin() {
       setHh("0");
       setMm("0");
       setSs("0");
+      setPaceMin("0");
+      setPaceSec("0");
+      runFieldOrder.current = ["distance", "duration", "pace"];
       setRpe(null);
       setConfirmingRun(false);
       // Deliberately left open, not closed -- a two-a-day means logging a
@@ -384,7 +467,11 @@ export function AthleteCheckin() {
                   min="0"
                   max="200"
                   value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    setDistance(text);
+                    recomputeRunField("distance", { distance: text });
+                  }}
                   placeholder="0.00"
                 />
               </label>
@@ -401,7 +488,11 @@ export function AthleteCheckin() {
                     min={0}
                     max={23}
                     value={hh}
-                    onChange={(e) => setHh(String(clampInt(e.target.value, 0, 23)))}
+                    onChange={(e) => {
+                      const v = String(clampInt(e.target.value, 0, 23));
+                      setHh(v);
+                      recomputeRunField("duration", { hh: v });
+                    }}
                   />
                   <span style={{ color: "var(--text-dim)" }}>:</span>
                   <input
@@ -411,7 +502,11 @@ export function AthleteCheckin() {
                     min={0}
                     max={59}
                     value={mm}
-                    onChange={(e) => setMm(String(clampInt(e.target.value, 0, 59)))}
+                    onChange={(e) => {
+                      const v = String(clampInt(e.target.value, 0, 59));
+                      setMm(v);
+                      recomputeRunField("duration", { mm: v });
+                    }}
                   />
                   <span style={{ color: "var(--text-dim)" }}>:</span>
                   <input
@@ -421,7 +516,46 @@ export function AthleteCheckin() {
                     min={0}
                     max={59}
                     value={ss}
-                    onChange={(e) => setSs(String(clampInt(e.target.value, 0, 59)))}
+                    onChange={(e) => {
+                      const v = String(clampInt(e.target.value, 0, 59));
+                      setSs(v);
+                      recomputeRunField("duration", { ss: v });
+                    }}
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="field-hint" style={{ color: "var(--text-dim-2)" }}>
+                  Pace (min:sec/mi)
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    className="ath-input"
+                    style={{ width: 52, textAlign: "center" }}
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={paceMin}
+                    onChange={(e) => {
+                      const v = String(clampInt(e.target.value, 0, 60));
+                      setPaceMin(v);
+                      recomputeRunField("pace", { paceMin: v });
+                    }}
+                  />
+                  <span style={{ color: "var(--text-dim)" }}>:</span>
+                  <input
+                    className="ath-input"
+                    style={{ width: 52, textAlign: "center" }}
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={paceSec}
+                    onChange={(e) => {
+                      const v = String(clampInt(e.target.value, 0, 59));
+                      setPaceSec(v);
+                      recomputeRunField("pace", { paceSec: v });
+                    }}
                   />
                 </div>
               </label>
@@ -454,6 +588,9 @@ export function AthleteCheckin() {
                     setHh("0");
                     setMm("0");
                     setSs("0");
+                    setPaceMin("0");
+                    setPaceSec("0");
+                    runFieldOrder.current = ["distance", "duration", "pace"];
                     setRpe(null);
                   }}
                 >
