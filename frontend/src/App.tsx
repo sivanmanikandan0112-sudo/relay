@@ -26,7 +26,7 @@ import { AdminSchoolDetail } from "./pages/admin/AdminSchoolDetail";
 import { AdminUsers } from "./pages/admin/AdminUsers";
 import { AdminUserDetail } from "./pages/admin/AdminUserDetail";
 import { AdminActivity } from "./pages/admin/AdminActivity";
-import { UpdateToast } from "./components/UpdateToast";
+import { ServiceWorkerUpdater } from "./components/ServiceWorkerUpdater";
 import { useAuth } from "./context/AuthContext";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -52,7 +52,7 @@ function RequireSuperAdmin({ children }: { children: React.ReactElement }) {
 export default function App() {
   return (
     <>
-      <UpdateToast />
+      <ServiceWorkerUpdater />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
